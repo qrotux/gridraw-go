@@ -119,18 +119,19 @@ A column whose SQL type is a Postgres `enum` cannot be compared with a text para
 
 ### Custom column bindings
 
-`grjet.Binding{Projection, Filter, Sort}` is exported. `Filter` and `Sort` default to `Projection` when it is a plain expression; set them explicitly when the projection is aliased (`.AS(key)`) or when the filter should run on a different expression:
+When a column's projection, filter or sort is a derived expression (`COALESCE`, an aggregate, a cast, a field of a derived table), build it with the constructor of its type and swap the go-jet side with `grjet.Bind`. The column passed to the constructor only fixes the static type; the constructor supplies the grid type and the operator set, so hand-written columns never fall behind the library:
 
 ```go
-gridraw.Column{
-    Key: "active", Type: gridraw.TypeBool, Sortable: true,
-    Binding: grjet.Binding{
-        Projection: table.Users.Active,
-        Filter:     postgres.COALESCE(table.Users.Active, postgres.Bool(true)),
-    },
-    Filter: &gridraw.FilterSpec{Operators: []gridraw.Op{gridraw.OpEq}},
-}
+active := postgres.COALESCE(table.Users.Active, postgres.Bool(true))
+grjet.Bind(grjet.BoolCol("active", table.Users.Active), grjet.Binding{
+    Projection: table.Users.Active,
+    Filter:     active,
+})
 ```
+
+`grjet.Binding{Projection, Filter, Sort, ParamType}` is exported. `Filter` and `Sort` default to `Projection` when it is a plain expression; set them explicitly when the projection is aliased (`.AS(key)`), because Postgres rejects aliases in `WHERE` and `ORDER BY` should target the expression. `Bind` replaces the whole binding, so a `DecimalCol` or decimal `ArrayCol` bound this way must cast its projection to text itself.
+
+A `gridraw.Column` literal works too. Leave `Filter: &gridraw.FilterSpec{}` with an empty `Operators` list to offer every operator of the column's type (every array operator on an array column); list operators only to restrict the set. `NewRegistry` rejects a filter whose effective set is empty, which only happens on `json`.
 
 ## Protocol
 
@@ -239,7 +240,7 @@ Column types and their operators:
 | `enum` | `in`, `notIn` | non-empty array of strings |
 | `json` | none | display only, not sortable |
 
-Array columns use the array operators instead (see Array columns). Two operators apply to every type and take no value: `isNull` and `isNotNull`. The constructors leave them out; call `.Nullable()` on a column to offer them.
+Array columns use the array operators instead (see Array columns). Two operators apply to every type and take no value: `isNull` and `isNotNull`. The constructors leave them out; call `.Nullable()` on a column to offer them. A `FilterSpec` with an empty `Operators` list, which is what the constructors declare, offers the full set of its type from the table above; list operators to restrict the set.
 
 Negative operators (`neq`, `notContains`, `notIn`, `notBetween`) also match NULL: a row with no value is "not equal" to anything.
 

@@ -134,7 +134,7 @@ func TestNewRegistryRejects(t *testing.T) {
 			c.Type, c.Searchable, c.Filter = TypeJSON, false, nil
 		}, "json cannot be an array"},
 		{"searchable non-string array", func(g *Grid) { c := col(g, "tags"); c.Type, c.Filter = TypeNumber, nil }, "searchable"},
-		{"widget without operators", func(g *Grid) { c := col(g, "tags"); c.Filter = &FilterSpec{Widget: WidgetTags} }, "widget set without operators"},
+		{"json filter with empty operators", func(g *Grid) { g.Columns = append(g.Columns, Column{Key: "j", Type: TypeJSON, Filter: &FilterSpec{}}) }, "no operators"},
 		{"sortable json", func(g *Grid) { g.Columns = append(g.Columns, Column{Key: "j", Type: TypeJSON, Sortable: true}) }, "json is not sortable"},
 		{"contains on decimal", func(g *Grid) { g.Columns[len(g.Columns)-1].Filter.Operators = []Op{OpContains} }, "not allowed"},
 		{"notBetween on string", func(g *Grid) { g.Columns[1].Filter.Operators = []Op{OpNotBetween} }, "not allowed"},
@@ -160,6 +160,41 @@ func TestNewRegistryRejects(t *testing.T) {
 	}
 }
 
+// An empty operator list means every operator of the type, so a widget on
+// it is valid and Nullable extends the full set rather than an empty one.
+func TestEmptyOperatorsMeanAll(t *testing.T) {
+	g := validTestGrid()
+	*col(&g, "tags") = Column{Key: "tags", Type: TypeString, Array: true, Filter: &FilterSpec{Widget: WidgetTags}}
+	g.Columns = append(g.Columns, Column{Key: "label", Type: TypeString, Filter: &FilterSpec{}})
+	if _, err := NewRegistry(nopCompiler{}, g); err != nil {
+		t.Fatalf("NewRegistry() error: %v", err)
+	}
+	c := col(&g, "label").Nullable()
+	want := append(append([]Op{}, opsByType[TypeString]...), OpIsNull, OpIsNotNull)
+	if got := c.Filter.Operators; !equalOps(got, want) {
+		t.Errorf("Nullable() on empty list = %v, want %v", got, want)
+	}
+	if opsByType[TypeString][len(opsByType[TypeString])-1] == OpIsNull {
+		t.Fatal("Nullable() wrote into the package operator list")
+	}
+	tags := col(&g, "tags").Nullable()
+	if !hasOp(tags.Filter.Operators, OpContainsAll) || tags.Filter.Widget != WidgetTags {
+		t.Errorf("Nullable() on empty array list = %+v, want array ops plus widget kept", tags.Filter)
+	}
+}
+
+func equalOps(a, b []Op) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestTypeJSONRegisters(t *testing.T) {
 	g := validTestGrid()
 	g.Columns = append(g.Columns, Column{Key: "payload", Type: TypeJSON})
@@ -178,8 +213,7 @@ func TestTypeJSONAcceptsNullOps(t *testing.T) {
 	}
 }
 
-// Every other operator is rejected on TypeJSON; the operator list must be
-// non-empty because an empty list passes validation vacuously.
+// Every other operator is rejected on TypeJSON.
 func TestTypeJSONRejectsFilter(t *testing.T) {
 	for _, op := range []Op{OpEq, OpContains, OpIn, OpGte} {
 		g := validTestGrid()

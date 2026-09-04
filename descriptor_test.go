@@ -22,6 +22,34 @@ func TestDescriptorFilterWidget(t *testing.T) {
 	}
 }
 
+// A column with an empty operator list publishes the full set of its type in
+// opsByType order, and an array column the array set.
+func TestDescriptorEmptyOperatorsMeanAll(t *testing.T) {
+	g := validTestGrid()
+	g.Columns = append(g.Columns,
+		Column{Key: "label", Type: TypeString, Filter: &FilterSpec{}},
+		Column{Key: "ids", Type: TypeUUID, Array: true, Filter: &FilterSpec{}})
+	byKey := map[string]ColumnDesc{}
+	for _, c := range BuildDescriptor(&g, stubTranslator, "en").Columns {
+		byKey[c.Key] = c
+	}
+	var got []Op
+	for _, op := range byKey["label"].Filter.Operators {
+		got = append(got, op.Op)
+	}
+	want := []Op{OpEq, OpNeq, OpContains, OpNotContains, OpStarts, OpEnds}
+	if !equalOps(got, want) {
+		t.Errorf("label operators = %v, want %v", got, want)
+	}
+	got = nil
+	for _, op := range byKey["ids"].Filter.Operators {
+		got = append(got, op.Op)
+	}
+	if !equalOps(got, arrayOps) {
+		t.Errorf("ids operators = %v, want %v", got, arrayOps)
+	}
+}
+
 func TestDescriptorArray(t *testing.T) {
 	g := validTestGrid()
 	byKey := map[string]ColumnDesc{}

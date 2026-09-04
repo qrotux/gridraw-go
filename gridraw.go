@@ -66,29 +66,58 @@ const (
 	OpIsNotEmpty     Op = "isNotEmpty"
 )
 
-var opsByType = map[ColType]map[Op]bool{
-	TypeString:   {OpEq: true, OpNeq: true, OpContains: true, OpNotContains: true, OpStarts: true, OpEnds: true},
-	TypeUUID:     {OpEq: true, OpNeq: true, OpIn: true, OpNotIn: true},
-	TypeNumber:   {OpEq: true, OpNeq: true, OpGt: true, OpGte: true, OpLt: true, OpLte: true, OpBetween: true, OpNotBetween: true},
-	TypeDecimal:  {OpEq: true, OpNeq: true, OpGt: true, OpGte: true, OpLt: true, OpLte: true, OpBetween: true, OpNotBetween: true},
-	TypeDate:     {OpEq: true, OpNeq: true, OpGt: true, OpGte: true, OpLt: true, OpLte: true, OpBetween: true, OpNotBetween: true},
-	TypeTime:     {OpEq: true, OpNeq: true, OpGt: true, OpGte: true, OpLt: true, OpLte: true, OpBetween: true, OpNotBetween: true},
-	TypeDatetime: {OpEq: true, OpNeq: true, OpGt: true, OpGte: true, OpLt: true, OpLte: true, OpBetween: true, OpNotBetween: true},
-	TypeEnum:     {OpIn: true, OpNotIn: true},
-	TypeBool:     {OpEq: true},
+// opsByType lists the operators of each scalar type in descriptor order; a
+// FilterSpec with no Operators offers exactly this list (arrayOps for an
+// array column). isNull/isNotNull are not listed: Nullable adds them.
+var opsByType = map[ColType][]Op{
+	TypeString:   {OpEq, OpNeq, OpContains, OpNotContains, OpStarts, OpEnds},
+	TypeUUID:     {OpEq, OpNeq, OpIn, OpNotIn},
+	TypeNumber:   orderedOps,
+	TypeDecimal:  orderedOps,
+	TypeDate:     orderedOps,
+	TypeTime:     orderedOps,
+	TypeDatetime: orderedOps,
+	TypeEnum:     {OpIn, OpNotIn},
+	TypeBool:     {OpEq},
 	TypeJSON:     {},
 }
 
-var arrayOps = map[Op]bool{OpContainsAny: true, OpContainsAll: true, OpContainsOnly: true, OpNotContainsAny: true, OpIsEmpty: true, OpIsNotEmpty: true}
+var orderedOps = []Op{OpEq, OpNeq, OpGt, OpGte, OpLt, OpLte, OpBetween, OpNotBetween}
+
+var arrayOps = []Op{OpContainsAny, OpContainsAll, OpContainsOnly, OpNotContainsAny, OpIsEmpty, OpIsNotEmpty}
+
+func hasOp(ops []Op, op Op) bool {
+	for _, o := range ops {
+		if o == op {
+			return true
+		}
+	}
+	return false
+}
 
 func opAllowed(c Column, op Op) bool {
 	if op == OpIsNull || op == OpIsNotNull {
 		return true
 	}
 	if c.Array {
-		return arrayOps[op]
+		return hasOp(arrayOps, op)
 	}
-	return opsByType[c.Type][op]
+	return hasOp(opsByType[c.Type], op)
+}
+
+// operators is the list the column offers: Filter.Operators when set, the
+// full set of the type otherwise, nil when the column is not filterable.
+func (c Column) operators() []Op {
+	if c.Filter == nil {
+		return nil
+	}
+	if len(c.Filter.Operators) > 0 {
+		return c.Filter.Operators
+	}
+	if c.Array {
+		return arrayOps
+	}
+	return opsByType[c.Type]
 }
 
 // valueless reports whether op carries no value.
@@ -106,8 +135,10 @@ type SortSpec struct {
 type Translator func(locale, key string) string
 
 // FilterSpec lists the operators a column accepts; nil on a Column means not
-// filterable. Widget is a hint for how the UI renders the filter input; the
-// core never interprets it beyond publishing it in the descriptor.
+// filterable, an empty Operators list means every operator of the column's
+// type (or every array operator). Widget is a hint for how the UI renders
+// the filter input; the core never interprets it beyond publishing it in the
+// descriptor.
 type FilterSpec struct {
 	Operators []Op
 	Widget    string
@@ -173,11 +204,14 @@ func (c Column) WithSearch() Column { c.Searchable = true; return c }
 // them out because most columns are NOT NULL and the extra operators would
 // only clutter the filter menu.
 func (c Column) Nullable() Column {
-	var ops []Op
+	base := c.operators() // copied below: it may be the package slice
+	ops := make([]Op, 0, len(base)+2)
+	ops = append(append(ops, base...), OpIsNull, OpIsNotNull)
+	f := FilterSpec{Operators: ops}
 	if c.Filter != nil {
-		ops = append(ops, c.Filter.Operators...)
+		f.Widget = c.Filter.Widget
 	}
-	c.Filter = &FilterSpec{Operators: append(ops, OpIsNull, OpIsNotNull)}
+	c.Filter = &f
 	return c
 }
 

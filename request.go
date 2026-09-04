@@ -179,13 +179,7 @@ func buildClause(g *Grid, fc FilterClause) (Clause, *ReqError) {
 	if !opAllowed(col, fc.Op) {
 		return Clause{}, badReq("op %q not allowed for field %q", fc.Op, fc.Field)
 	}
-	allowed := false
-	for _, op := range col.Filter.Operators {
-		if op == fc.Op {
-			allowed = true
-		}
-	}
-	if !allowed {
+	if !hasOp(col.operators(), fc.Op) {
 		return Clause{}, badReq("op %q not allowed for field %q", fc.Op, fc.Field)
 	}
 	c := Clause{Col: col, Op: fc.Op}

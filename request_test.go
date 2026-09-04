@@ -150,6 +150,23 @@ func TestBuildQuery(t *testing.T) {
 			wantErr: "not allowed",
 		},
 		{
+			name: "empty operator list accepts every operator of the type",
+			grid: func() Grid {
+				g := validTestGrid()
+				g.Columns[1].Filter = &FilterSpec{} // email
+				return g
+			},
+			req: RowsRequest{
+				Columns: []string{"email"},
+				Filters: [][]FilterClause{{{Field: "email", Op: OpStarts, Value: "a"}}},
+			},
+			check: func(t *testing.T, q *Query) {
+				if c := q.Groups[0][0]; c.Op != OpStarts {
+					t.Errorf("clause = %+v, want starts", c)
+				}
+			},
+		},
+		{
 			name: "isNull ignores the value",
 			req: RowsRequest{
 				Columns: []string{"email"},

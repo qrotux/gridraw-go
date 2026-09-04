@@ -102,8 +102,8 @@ func validateGrid(g *Grid) error {
 			}
 		}
 		if c.Filter != nil {
-			if c.Filter.Widget != "" && len(c.Filter.Operators) == 0 {
-				return fmt.Errorf("column %q: filter widget set without operators", c.Key)
+			if len(c.operators()) == 0 {
+				return fmt.Errorf("column %q: filter with no operators", c.Key)
 			}
 			for _, op := range c.Filter.Operators {
 				if !opAllowed(c, op) {

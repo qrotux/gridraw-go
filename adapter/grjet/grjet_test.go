@@ -544,7 +544,7 @@ func TestCustomBinding(t *testing.T) {
 	g.Columns = append(g.Columns, gridraw.Column{
 		Key: "flag", Type: gridraw.TypeBool, Sortable: true,
 		Binding: Binding{Projection: colIsBanned, Filter: postgres.COALESCE(colIsBanned, postgres.Bool(true))},
-		Filter:  &gridraw.FilterSpec{Operators: []gridraw.Op{gridraw.OpEq}},
+		Filter:  &gridraw.FilterSpec{},
 	})
 	reg, err := gridraw.NewRegistry(Compiler{}, g)
 	if err != nil {
@@ -580,5 +580,30 @@ func TestSQLContainsOnly(t *testing.T) {
 	}
 	if strings.Contains(st.RowsSQL, "users.tags IS NULL") {
 		t.Errorf("containsOnly is a positive operator and must not match NULL:\n%s", st.RowsSQL)
+	}
+}
+
+// Bind keeps the constructor's type and filters and swaps only the go-jet
+// side, so the filter runs on the bound expression and the descriptor still
+// offers the string operators.
+func TestBind(t *testing.T) {
+	g := validTestGrid()
+	label := postgres.COALESCE(colLocale, colEmail)
+	g.Columns = append(g.Columns, Bind(StrCol("label", colEmail), Binding{
+		Projection: label.AS("label"), Filter: label, Sort: label,
+	}))
+	reg, err := gridraw.NewRegistry(Compiler{}, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gr, _ := reg.Get("t")
+	st := compile(t, gr, gridraw.RowsRequest{
+		Columns: []string{"label"},
+		Filters: [][]gridraw.FilterClause{{{Field: "label", Op: gridraw.OpNeq, Value: "x"}}},
+		Sort:    []gridraw.SortSpec{{Column: "label", Dir: "asc"}},
+	})
+	if !strings.Contains(st.RowsSQL, `COALESCE(users.locale, users.email) AS "label"`) ||
+		!strings.Contains(st.RowsSQL, "NOT (COALESCE(users.locale, users.email) ILIKE") {
+		t.Errorf("bound expression not used for projection and filter:\n%s", st.RowsSQL)
 	}
 }

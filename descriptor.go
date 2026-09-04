@@ -140,7 +140,7 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 		}
 		if c.Filter != nil {
 			fd := &FilterDesc{}
-			for _, op := range c.Filter.Operators {
+			for _, op := range c.operators() {
 				fd.Operators = append(fd.Operators, OpDesc{Op: op, Label: tr(locale, operatorKey(op))})
 			}
 			for _, v := range c.Enum {

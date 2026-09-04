@@ -63,16 +63,12 @@ func membersGrid() gridraw.Grid {
 			grjet.UUIDCol("id", colID),
 			grjet.StrCol("email", colEmail).WithSearch().Vis(),
 			grjet.JoinStrCol("team", colTeamName).WithSearch().Vis(),
-			{
-				// A nullable boolean: the filter treats NULL as false through
-				// COALESCE while the projection still shows null to the client.
-				Key: "active", Type: gridraw.TypeBool, Sortable: true, DefaultVisible: true,
-				Binding: grjet.Binding{
-					Projection: colActive,
-					Filter:     postgres.COALESCE(colActive, postgres.Bool(false)),
-				},
-				Filter: &gridraw.FilterSpec{Operators: []gridraw.Op{gridraw.OpEq}},
-			},
+			// A nullable boolean: the filter treats NULL as false through
+			// COALESCE while the projection still shows null to the client.
+			grjet.Bind(grjet.BoolCol("active", colActive), grjet.Binding{
+				Projection: colActive,
+				Filter:     postgres.COALESCE(colActive, postgres.Bool(false)),
+			}).Vis(),
 			grjet.TsCol("lastSeenAt", colLastSeen).Nullable(), // NULL means "never seen"
 			grjet.JSONCol("prefs", colPrefs),
 		},
