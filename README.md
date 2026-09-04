@@ -87,9 +87,12 @@ Runnable versions of this and of the advanced seams (join, custom binding, per-r
 |---|---|---|
 | `containsAny` | `col && $1` | non-empty array of element values |
 | `containsAll` | `col @> $1` | non-empty array of element values |
+| `containsOnly` | `col @> $1 AND col <@ $2` | non-empty array of element values |
 | `notContainsAny` | `col IS NULL OR NOT (col && $1)` | non-empty array of element values |
 | `isEmpty` | `col IS NULL OR cardinality(col) = 0` | none |
 | `isNotEmpty` | `cardinality(col) > 0` | none |
+
+`containsOnly` is set equality: the row matches when the column holds exactly the given values, no more and no less, ignoring order and duplicates (`{go,go}` matches `["go"]`). It binds the value twice, once per direction. An empty column value is matched by `isEmpty`, not by `containsOnly`.
 
 Element matching is exact, including case. The parameter is bound as `<element type>[]` (`text[]`, `uuid[]`, `float8[]`, `decimal[]`, `bool[]`, `date[]`, `time[]`, `timestamptz[]`); when the column's SQL element type differs, name it with `grjet.PgType` (an `integer[]` column, a Postgres enum). `Step` on a `time`/`datetime` array validates alignment and informs the UI but does not widen matching.
 

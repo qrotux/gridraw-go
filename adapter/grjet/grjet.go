@@ -177,6 +177,13 @@ func arrayExpr(e postgres.Expression, c gridraw.Clause) postgres.BoolExpression 
 		return postgres.BoolExp(postgres.CustomExpression(e, postgres.Token("&&"), param))
 	case gridraw.OpContainsAll:
 		return postgres.BoolExp(postgres.CustomExpression(e, postgres.Token("@>"), param))
+	case gridraw.OpContainsOnly:
+		// Mutual containment is set equality: order and duplicates do not
+		// matter, and the @> half still uses a GIN index.
+		return postgres.AND(
+			postgres.BoolExp(postgres.CustomExpression(e, postgres.Token("@>"), param)),
+			postgres.BoolExp(postgres.CustomExpression(e, postgres.Token("<@"), param)),
+		)
 	case gridraw.OpNotContainsAny:
 		return orNull(e, postgres.NOT(postgres.BoolExp(postgres.CustomExpression(e, postgres.Token("&&"), param))))
 	}

@@ -55,8 +55,12 @@ const (
 	OpIsNotNull Op = "isNotNull"
 	// Array operators; the value is an array of element values. Element
 	// matching is exact.
-	OpContainsAny    Op = "containsAny"
-	OpContainsAll    Op = "containsAll"
+	OpContainsAny Op = "containsAny"
+	OpContainsAll Op = "containsAll"
+	// OpContainsOnly matches an array holding exactly the given set: every
+	// element is in the value and every value is in the element. Order and
+	// duplicates do not matter.
+	OpContainsOnly   Op = "containsOnly"
 	OpNotContainsAny Op = "notContainsAny"
 	OpIsEmpty        Op = "isEmpty"
 	OpIsNotEmpty     Op = "isNotEmpty"
@@ -75,7 +79,7 @@ var opsByType = map[ColType]map[Op]bool{
 	TypeJSON:     {},
 }
 
-var arrayOps = map[Op]bool{OpContainsAny: true, OpContainsAll: true, OpNotContainsAny: true, OpIsEmpty: true, OpIsNotEmpty: true}
+var arrayOps = map[Op]bool{OpContainsAny: true, OpContainsAll: true, OpContainsOnly: true, OpNotContainsAny: true, OpIsEmpty: true, OpIsNotEmpty: true}
 
 func opAllowed(c Column, op Op) bool {
 	if op == OpIsNull || op == OpIsNotNull {

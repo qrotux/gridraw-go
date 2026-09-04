@@ -104,7 +104,7 @@ func JoinStrCol(key string, c postgres.ColumnString) gridraw.Column {
 	}
 }
 
-var arrayOps = []gridraw.Op{gridraw.OpContainsAny, gridraw.OpContainsAll, gridraw.OpNotContainsAny, gridraw.OpIsEmpty, gridraw.OpIsNotEmpty}
+var arrayOps = []gridraw.Op{gridraw.OpContainsAny, gridraw.OpContainsAll, gridraw.OpContainsOnly, gridraw.OpNotContainsAny, gridraw.OpIsEmpty, gridraw.OpIsNotEmpty}
 
 // ArrayCol is an array column over the go-jet array column or expression c,
 // with elem as the element type. Element matching is exact. The parameter is

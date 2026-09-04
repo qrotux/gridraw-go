@@ -394,6 +394,21 @@ func TestBuildQuery(t *testing.T) {
 			},
 		},
 		{
+			name: "array: containsOnly carries the whole set",
+			req:  RowsRequest{Columns: []string{"email"}, Filters: [][]FilterClause{{{Field: "tags", Op: OpContainsOnly, Value: []any{"go", "sql"}}}}},
+			check: func(t *testing.T, q *Query) {
+				c := q.Groups[0][0]
+				if v, ok := c.Value.([]string); c.Op != OpContainsOnly || !ok || len(v) != 2 {
+					t.Errorf("clause = %+v, want containsOnly over two strings", c)
+				}
+			},
+		},
+		{
+			name:    "array: containsOnly rejected on a scalar column",
+			req:     RowsRequest{Columns: []string{"email"}, Filters: [][]FilterClause{{{Field: "email", Op: OpContainsOnly, Value: []any{"go"}}}}},
+			wantErr: "op",
+		},
+		{
 			name:    "array: empty value rejected",
 			req:     RowsRequest{Columns: []string{"email"}, Filters: [][]FilterClause{{{Field: "tags", Op: OpContainsAll, Value: []any{}}}}},
 			wantErr: "non-empty array",

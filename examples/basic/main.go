@@ -61,6 +61,7 @@ var titles = map[string]string{
 	"grid.operators.isNotNull":      "is not empty",
 	"grid.operators.containsAny":    "contains any of",
 	"grid.operators.containsAll":    "contains all of",
+	"grid.operators.containsOnly":   "contains only",
 	"grid.operators.notContainsAny": "contains none of",
 	"grid.operators.isEmpty":        "is empty list",
 	"grid.operators.isNotEmpty":     "is not empty list",

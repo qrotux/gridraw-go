@@ -34,7 +34,7 @@ func validTestGrid() Grid {
 			{Key: "role", Type: TypeEnum, Enum: []string{"user", "admin"},
 				Filter: &FilterSpec{Operators: []Op{OpIn, OpNotIn}}},
 			{Key: "tags", Type: TypeString, Array: true, Searchable: true,
-				Filter: &FilterSpec{Operators: []Op{OpContainsAny, OpContainsAll, OpNotContainsAny, OpIsEmpty, OpIsNotEmpty, OpIsNull}}},
+				Filter: &FilterSpec{Operators: []Op{OpContainsAny, OpContainsAll, OpContainsOnly, OpNotContainsAny, OpIsEmpty, OpIsNotEmpty, OpIsNull}}},
 			{Key: "slots", Type: TypeTime, Array: true, Step: 15 * time.Minute,
 				Filter: &FilterSpec{Operators: []Op{OpContainsAny}}},
 			{Key: "price", Type: TypeDecimal, Sortable: true,

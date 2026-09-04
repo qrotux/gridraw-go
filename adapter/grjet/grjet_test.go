@@ -557,3 +557,26 @@ func TestCustomBinding(t *testing.T) {
 		t.Errorf("custom filter expression not used:\n%s", st.RowsSQL)
 	}
 }
+
+// containsOnly is set equality: both containment directions on the same value.
+func TestSQLContainsOnly(t *testing.T) {
+	st := compile(t, testRegistry(t), gridraw.RowsRequest{
+		Columns: []string{"email"},
+		Filters: [][]gridraw.FilterClause{{
+			{Field: "tags", Op: gridraw.OpContainsOnly, Value: []any{"go", "sql"}},
+		}},
+	})
+	for _, frag := range []string{"users.tags @> ($1::text[])", "users.tags <@ ($2::text[])"} {
+		if !strings.Contains(st.RowsSQL, frag) {
+			t.Errorf("missing %q in:\n%s", frag, st.RowsSQL)
+		}
+	}
+	// The value is bound once per direction: go-jet re-serializes the
+	// expression instead of reusing the placeholder.
+	if args := fmt.Sprint(st.RowsArgs); !strings.HasPrefix(args, "[[go sql] [go sql]") {
+		t.Errorf("args = %v, want the value bound twice", st.RowsArgs)
+	}
+	if strings.Contains(st.RowsSQL, "users.tags IS NULL") {
+		t.Errorf("containsOnly is a positive operator and must not match NULL:\n%s", st.RowsSQL)
+	}
+}
