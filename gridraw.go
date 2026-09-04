@@ -205,8 +205,11 @@ type Grid struct {
 	PageSize        int
 	PageSizeOptions []int
 	DefaultSort     SortSpec
-	Columns         []Column
-	Binding         any
+	// SkipTotal drops the count query for this grid: the rows response then
+	// carries no total and the client paginates on hasPrev/hasNext alone.
+	SkipTotal bool
+	Columns   []Column
+	Binding   any
 
 	// ForContext, when set, replaces the definition per request. The result
 	// is not re-validated: derive it from a registered grid.

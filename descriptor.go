@@ -47,6 +47,7 @@ type Descriptor struct {
 	PageSize        int          `json:"pageSize"`
 	PageSizeOptions []int        `json:"pageSizeOptions"`
 	DefaultSort     SortSpec     `json:"defaultSort"`
+	SkipTotal       bool         `json:"skipTotal,omitempty"`
 	Search          *SearchInfo  `json:"search"`
 	Columns         []ColumnDesc `json:"columns"`
 }
@@ -124,7 +125,7 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 	d := Descriptor{
 		Name: g.Name, Description: describe(tr, locale, gridDescKey(g.Name), g.Description),
 		IDColumn: g.IDColumn, PageSize: g.PageSize,
-		PageSizeOptions: opts, DefaultSort: g.DefaultSort,
+		PageSizeOptions: opts, DefaultSort: g.DefaultSort, SkipTotal: g.SkipTotal,
 	}
 	var searchTitles []string
 	for _, c := range g.Columns {

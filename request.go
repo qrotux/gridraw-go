@@ -73,11 +73,19 @@ type Query struct {
 	Sorts    []SortTerm
 	Page     int
 	PageSize int
+	// WithTotal reports whether the Count statement is to be run; it mirrors
+	// Grid.SkipTotal, the client has no say in it.
+	WithTotal bool
 }
+
+// RowLimit is the LIMIT a Compiler must use: one row more than the page, so
+// that the Handler can report hasNext without counting. The extra row never
+// reaches the client.
+func (q *Query) RowLimit() int { return q.PageSize + 1 }
 
 // BuildQuery validates a request against a grid.
 func BuildQuery(g *Grid, req RowsRequest) (*Query, *ReqError) {
-	q := &Query{Grid: g, Search: req.Search}
+	q := &Query{Grid: g, Search: req.Search, WithTotal: !g.SkipTotal}
 
 	seen := map[string]bool{}
 	for _, key := range req.Columns {

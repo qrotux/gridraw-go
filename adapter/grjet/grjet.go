@@ -497,7 +497,7 @@ func rowsSQL(q *gridraw.Query, base func() postgres.ReadableTable) (string, []an
 		stmt = stmt.WHERE(w)
 	}
 	stmt = stmt.ORDER_BY(orderBy(q)...).
-		LIMIT(int64(q.PageSize)).
+		LIMIT(int64(q.RowLimit())).
 		OFFSET(int64((q.Page - 1) * q.PageSize))
 	return stmt.Sql()
 }

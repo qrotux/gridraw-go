@@ -394,6 +394,15 @@ func TestBuildQuery(t *testing.T) {
 			},
 		},
 		{
+			name: "count is on by default, limit is one row over the page",
+			req:  RowsRequest{Columns: []string{"email"}, PageSize: 25},
+			check: func(t *testing.T, q *Query) {
+				if !q.WithTotal || q.RowLimit() != 26 {
+					t.Errorf("WithTotal=%v RowLimit=%d, want true and 26", q.WithTotal, q.RowLimit())
+				}
+			},
+		},
+		{
 			name: "array: containsOnly carries the whole set",
 			req:  RowsRequest{Columns: []string{"email"}, Filters: [][]FilterClause{{{Field: "tags", Op: OpContainsOnly, Value: []any{"go", "sql"}}}}},
 			check: func(t *testing.T, q *Query) {

@@ -73,6 +73,8 @@ grchi.Register(r, "/api/admin/grids", authGuard, h) // guard may be nil
 
 `grstd.Register(mux, "/api/admin/grids", authGuard, h)` does the same on an `*http.ServeMux`.
 
+Set `SkipTotal: true` on a grid whose row count is too expensive to compute per request; see the rows response below.
+
 Runnable versions of this and of the advanced seams (join, custom binding, per-request grid, guard, locale) live in [`examples/`](examples/README.md).
 
 ### Per-request grids
@@ -163,7 +165,7 @@ gridraw.Column{
 }
 ```
 
-`description` is omitted, on the grid and on a column, when neither a literal `Description` nor a translation is set. `search` is `null` when no column is searchable. `filter` is omitted for non-filterable columns. `array` is `true` on array columns, whose `type` is then the element type. `step` (seconds) is present on every `time` and `datetime` column, `1` by default. `filter.widget` is a UI hint for the filter input (`checkboxes`, `tags`, or any client-defined value), omitted when unset.
+`skipTotal` is `true` only on a grid whose rows response carries no `total`, and is omitted otherwise. `description` is omitted, on the grid and on a column, when neither a literal `Description` nor a translation is set. `search` is `null` when no column is searchable. `filter` is omitted for non-filterable columns. `array` is `true` on array columns, whose `type` is then the element type. `step` (seconds) is present on every `time` and `datetime` column, `1` by default. `filter.widget` is a UI hint for the filter input (`checkboxes`, `tags`, or any client-defined value), omitted when unset.
 
 ### `GET <base>/-/list` → grid list
 
@@ -211,7 +213,7 @@ Request:
 Response:
 
 ```json
-{"rows": [{"id": "…", "email": "…", "role": "admin"}], "total": 128}
+{"rows": [{"id": "…", "email": "…", "role": "admin"}], "total": 128, "hasPrev": false, "hasNext": true}
 ```
 
 - `filters` is a disjunctive normal form: the outer array is OR, each inner array is AND. Every group must be non-empty.
@@ -219,6 +221,8 @@ Response:
 - `sort` priority is array order. Empty falls back to the grid default. The id column is appended as a tiebreaker unless already present. Nulls sort last.
 - `idColumn` is always included in every row, even when not requested.
 - `page` defaults to 1, `pageSize` to the grid default.
+- `hasPrev` and `hasNext` are always present. They cost nothing: `hasPrev` is `page > 1` and the rows statement fetches one row over the page, whose presence is `hasNext`. The extra row never reaches the client.
+- `total` is present unless the grid sets `SkipTotal`, which drops the `COUNT` query — usually the expensive half on a filtered set. The decision is the server's alone: a request cannot ask for or refuse the count. A grid that counts still sends `"total": 0` for an empty result, and a grid that does not omits the key entirely; the descriptor carries `"skipTotal": true` so the client knows to paginate on `hasPrev`/`hasNext` instead of page numbers.
 
 Column types and their operators:
 
@@ -265,7 +269,7 @@ Descriptions are the one label with a literal fallback: `Grid.Description` and `
 
 ## Writing your own adapters
 
-- **Compiler**: implement `Validate(*Grid) error` (check that `Grid.Binding` and every `Column.Binding` carry what you need; runs once at `NewRegistry`) and `Compile(*Query) (Statements, error)`. `Query` is fully validated: typed clause values (`string`, `[]string`, lowercased uuid strings, decimal strings, `float64`, and for array columns a `[]string`/`[]float64`/`[]bool`/`[]time.Time` of elements, `time.Time` for `date`, `time` and `datetime`, `bool`, nothing for `isNull`/`isNotNull`), resolved sort terms, page and page size. Stepped time columns arrive already widened to buckets: `between`/`notBetween` clauses with `Clause.UpperOpen` set mean `[a, b)`, and a `time` upper bound may be the next midnight (`t.Day() != 1`), which Postgres spells `24:00:00`. Append the id tiebreaker yourself.
+- **Compiler**: implement `Validate(*Grid) error` (check that `Grid.Binding` and every `Column.Binding` carry what you need; runs once at `NewRegistry`) and `Compile(*Query) (Statements, error)`. `Query` is fully validated: typed clause values (`string`, `[]string`, lowercased uuid strings, decimal strings, `float64`, and for array columns a `[]string`/`[]float64`/`[]bool`/`[]time.Time` of elements, `time.Time` for `date`, `time` and `datetime`, `bool`, nothing for `isNull`/`isNotNull`), resolved sort terms, page and page size. Stepped time columns arrive already widened to buckets: `between`/`notBetween` clauses with `Clause.UpperOpen` set mean `[a, b)`, and a `time` upper bound may be the next midnight (`t.Day() != 1`), which Postgres spells `24:00:00`. Append the id tiebreaker yourself, and `LIMIT` to `q.RowLimit()` (one row over the page) so the handler can answer `hasNext`; a compiler that limits to `q.PageSize` instead only ever reports `hasNext: false`. Skip the count statement when `q.WithTotal` is false if building it is not free.
 - **Executor**: implement `Rows(ctx, sql, args, keys)` returning one `map[string]any` per row keyed positionally by `keys`, and `Count(ctx, sql, args)`.
 - **Router**: call `Handler.Descriptor(w, r, name)`, `Handler.Rows(w, r, name)`, `Handler.List(w, r)` and `Handler.Catalog(w, r)` from any mux; see `router/grstd` for the shortest example.
 

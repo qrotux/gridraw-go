@@ -8,10 +8,13 @@ import (
 	"net/http"
 )
 
-// RowsResponse is the body of the rows endpoint.
+// RowsResponse is the body of the rows endpoint. Total is absent when the
+// request asked to skip the count; HasPrev and HasNext are always present.
 type RowsResponse struct {
-	Rows  []map[string]any `json:"rows"`
-	Total int64            `json:"total"`
+	Rows    []map[string]any `json:"rows"`
+	Total   *int64           `json:"total,omitempty"`
+	HasPrev bool             `json:"hasPrev"`
+	HasNext bool             `json:"hasNext"`
 }
 
 // Options wires a Handler. Locale picks the descriptor locale per request.
@@ -125,11 +128,20 @@ func (h *Handler) execute(ctx context.Context, q *Query) (*RowsResponse, error) 
 	if err != nil {
 		return nil, err
 	}
-	total, err := h.opts.Executor.Count(ctx, st.CountSQL, st.CountArgs)
-	if err != nil {
-		return nil, err
+	resp := &RowsResponse{Rows: rows, HasPrev: q.Page > 1}
+	// The compiler asked for one row more than the page; its presence is the
+	// answer to hasNext. A compiler that ignores RowLimit only loses hasNext.
+	if len(rows) > q.PageSize {
+		resp.Rows, resp.HasNext = rows[:q.PageSize], true
 	}
-	return &RowsResponse{Rows: rows, Total: total}, nil
+	if q.WithTotal {
+		total, err := h.opts.Executor.Count(ctx, st.CountSQL, st.CountArgs)
+		if err != nil {
+			return nil, err
+		}
+		resp.Total = &total
+	}
+	return resp, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

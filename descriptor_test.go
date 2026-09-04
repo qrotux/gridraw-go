@@ -223,3 +223,16 @@ func TestBuildGridEntry(t *testing.T) {
 		t.Errorf("column without a description must omit it: %s", raw)
 	}
 }
+
+// skipTotal reaches the client so it can drop the page numbers; a counting
+// grid must not carry the key at all.
+func TestDescriptorSkipTotal(t *testing.T) {
+	g := validTestGrid()
+	if raw, _ := json.Marshal(BuildDescriptor(&g, stubTranslator, "en")); strings.Contains(string(raw), `"skipTotal"`) {
+		t.Errorf("a counting grid must omit skipTotal: %s", raw)
+	}
+	g.SkipTotal = true
+	if d := BuildDescriptor(&g, stubTranslator, "en"); !d.SkipTotal {
+		t.Errorf("descriptor.SkipTotal = false, want true")
+	}
+}

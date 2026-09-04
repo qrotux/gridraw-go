@@ -118,16 +118,20 @@ func TestHandlerRowsNoExecutor500(t *testing.T) {
 }
 
 type fakeExecutor struct {
-	rows  []map[string]any
-	total int64
-	keys  []string
+	rows    []map[string]any
+	total   int64
+	keys    []string
+	counted bool
 }
 
 func (f *fakeExecutor) Rows(_ context.Context, _ string, _ []any, keys []string) ([]map[string]any, error) {
 	f.keys = keys
 	return f.rows, nil
 }
-func (f *fakeExecutor) Count(context.Context, string, []any) (int64, error) { return f.total, nil }
+func (f *fakeExecutor) Count(context.Context, string, []any) (int64, error) {
+	f.counted = true
+	return f.total, nil
+}
 
 func TestHandlerRows200(t *testing.T) {
 	reg, err := NewRegistry(nopCompiler{}, validTestGrid())
@@ -145,8 +149,11 @@ func TestHandlerRows200(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Total != 7 || len(resp.Rows) != 1 || resp.Rows[0]["email"] != "a@b" {
+	if resp.Total == nil || *resp.Total != 7 || len(resp.Rows) != 1 || resp.Rows[0]["email"] != "a@b" {
 		t.Errorf("resp = %+v", resp)
+	}
+	if resp.HasPrev || resp.HasNext {
+		t.Errorf("hasPrev/hasNext = %v/%v, want false/false on a short first page", resp.HasPrev, resp.HasNext)
 	}
 	if len(ex.keys) != 2 || ex.keys[0] != "email" || ex.keys[1] != "id" {
 		t.Errorf("executor keys = %v, want [email id]", ex.keys)
@@ -276,5 +283,57 @@ func TestHandlerCatalog(t *testing.T) {
 	}
 	if c := got[0].Columns[0]; c.Key != "id" || c.Type != TypeUUID || c.Title != "grid.t.id" {
 		t.Errorf("id column = %+v", c)
+	}
+}
+
+// The compiler fetches one row over the page: the extra row answers hasNext
+// and is trimmed off. Grid.SkipTotal drops the count entirely.
+func TestHandlerRowsPageFlags(t *testing.T) {
+	g := validTestGrid()
+	g.SkipTotal = true
+	reg, err := NewRegistry(nopCompiler{}, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]map[string]any, 3)
+	for i := range rows {
+		rows[i] = map[string]any{"email": "a@b", "id": i}
+	}
+	ex := &fakeExecutor{rows: rows, total: 7}
+	h := NewHandler(Options{Registry: reg, Translator: stubTranslator, Locale: enLocale, Compiler: nopCompiler{}, Executor: ex})
+
+	rec := httptest.NewRecorder()
+	body := `{"columns":["email"],"page":2,"pageSize":2}`
+	h.Rows(rec, httptest.NewRequest(http.MethodPost, "/grids/t/rows", bytes.NewBufferString(body)), "t")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp RowsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Rows) != 2 || !resp.HasNext || !resp.HasPrev {
+		t.Errorf("resp = %+v, want 2 rows with both flags set", resp)
+	}
+	if resp.Total != nil || ex.counted {
+		t.Errorf("total must be skipped: total=%v counted=%v", resp.Total, ex.counted)
+	}
+	if strings.Contains(rec.Body.String(), `"total"`) {
+		t.Errorf("total must be omitted from the body: %s", rec.Body.String())
+	}
+}
+
+// A count of zero is a number on the wire, not an omitted key.
+func TestHandlerRowsZeroTotal(t *testing.T) {
+	reg, err := NewRegistry(nopCompiler{}, validTestGrid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex := &fakeExecutor{total: 0}
+	h := NewHandler(Options{Registry: reg, Translator: stubTranslator, Locale: enLocale, Compiler: nopCompiler{}, Executor: ex})
+	rec := httptest.NewRecorder()
+	h.Rows(rec, httptest.NewRequest(http.MethodPost, "/grids/t/rows", bytes.NewBufferString(`{"columns":["email"]}`)), "t")
+	if !strings.Contains(rec.Body.String(), `"total":0`) {
+		t.Errorf("body = %s, want an explicit zero total", rec.Body.String())
 	}
 }

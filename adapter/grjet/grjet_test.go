@@ -257,14 +257,16 @@ func TestSQLPagination(t *testing.T) {
 	if !strings.Contains(st.RowsSQL, "OFFSET") {
 		t.Fatalf("expected OFFSET in:\n%s", st.RowsSQL)
 	}
-	// LIMIT and OFFSET are the last two args (no WHERE args here).
+	// LIMIT and OFFSET are the last two args (no WHERE args here). The limit
+	// is q.RowLimit(), one row over the page, which is how the handler answers
+	// hasNext without a count.
 	args := st.RowsArgs
 	if len(args) < 2 {
 		t.Fatalf("expected at least 2 args (limit, offset), got %v", args)
 	}
 	limitArg, offsetArg := args[len(args)-2], args[len(args)-1]
-	if n, ok := limitArg.(int64); !ok || n != 25 {
-		t.Errorf("expected LIMIT arg int64(25), got %v (%T)", limitArg, limitArg)
+	if n, ok := limitArg.(int64); !ok || n != 26 {
+		t.Errorf("expected LIMIT arg int64(26), got %v (%T)", limitArg, limitArg)
 	}
 	if n, ok := offsetArg.(int64); !ok || n != 50 {
 		t.Errorf("expected OFFSET arg int64(50), got %v (%T)", offsetArg, offsetArg)
