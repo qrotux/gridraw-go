@@ -3,6 +3,7 @@ package gridraw
 import (
 	"fmt"
 	"sort"
+	"time"
 )
 
 // Registry holds validated grids by name.
@@ -81,9 +82,31 @@ func validateGrid(g *Grid) error {
 		if c.Type == TypeEnum && len(c.Enum) == 0 {
 			return fmt.Errorf("column %q: enum type requires Enum values", c.Key)
 		}
+		if c.Type == TypeJSON && c.Sortable {
+			return fmt.Errorf("column %q: json is not sortable", c.Key)
+		}
+		if c.Array {
+			if c.Type == TypeJSON {
+				return fmt.Errorf("column %q: json cannot be an array", c.Key)
+			}
+			if c.Sortable {
+				return fmt.Errorf("column %q: array columns are not sortable", c.Key)
+			}
+		}
+		if c.Step != 0 {
+			if c.Type != TypeTime && c.Type != TypeDatetime {
+				return fmt.Errorf("column %q: step is only valid for time and datetime", c.Key)
+			}
+			if c.Step < time.Second || c.Step%time.Second != 0 || (24*time.Hour)%c.Step != 0 {
+				return fmt.Errorf("column %q: step %v must be whole seconds dividing a day", c.Key, c.Step)
+			}
+		}
 		if c.Filter != nil {
+			if c.Filter.Widget != "" && len(c.Filter.Operators) == 0 {
+				return fmt.Errorf("column %q: filter widget set without operators", c.Key)
+			}
 			for _, op := range c.Filter.Operators {
-				if !opsByType[c.Type][op] {
+				if !opAllowed(c, op) {
 					return fmt.Errorf("column %q: op %q not allowed for type %q", c.Key, op, c.Type)
 				}
 			}

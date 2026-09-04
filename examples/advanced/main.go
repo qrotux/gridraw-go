@@ -59,9 +59,9 @@ func membersGrid() gridraw.Grid {
 		DefaultSort: gridraw.SortSpec{Column: "email", Dir: "asc"},
 		Binding:     grjet.Base(joined),
 		Columns: []gridraw.Column{
-			grjet.StrColNoFilter("id", colID),
-			grjet.Vis(grjet.Searchable(grjet.StrCol("email", colEmail))),
-			grjet.Vis(grjet.Searchable(grjet.JoinStrCol("team", colTeamName))),
+			grjet.UUIDCol("id", colID),
+			grjet.StrCol("email", colEmail).WithSearch().Vis(),
+			grjet.JoinStrCol("team", colTeamName).WithSearch().Vis(),
 			{
 				// A nullable boolean: the filter treats NULL as false through
 				// COALESCE while the projection still shows null to the client.
@@ -72,7 +72,7 @@ func membersGrid() gridraw.Grid {
 				},
 				Filter: &gridraw.FilterSpec{Operators: []gridraw.Op{gridraw.OpEq}},
 			},
-			grjet.TsCol("lastSeenAt", colLastSeen),
+			grjet.TsCol("lastSeenAt", colLastSeen).Nullable(), // NULL means "never seen"
 			grjet.JSONCol("prefs", colPrefs),
 		},
 	}
@@ -98,14 +98,30 @@ var i18n = map[string]map[string]string{
 	"en": {
 		"grid.members.email": "Email", "grid.members.team": "Team", "grid.members.active": "Active",
 		"grid.members.lastSeenAt": "Last seen", "grid.members.prefs": "Preferences", "grid.members.id": "ID",
-		"grid.operators.eq": "equals", "grid.operators.contains": "contains", "grid.operators.starts": "starts with",
-		"grid.operators.gte": "after", "grid.operators.lte": "before", "grid.operators.between": "between",
+		"grid.operators.eq": "equals", "grid.operators.neq": "does not equal",
+		"grid.operators.contains": "contains", "grid.operators.notContains": "does not contain",
+		"grid.operators.starts": "starts with", "grid.operators.ends": "ends with",
+		"grid.operators.gt": "after", "grid.operators.gte": "on or after",
+		"grid.operators.lt": "before", "grid.operators.lte": "on or before", "grid.operators.between": "between", "grid.operators.notBetween": "not between",
+		"grid.operators.in": "is one of", "grid.operators.notIn": "is not one of",
+		"grid.operators.isNull": "is empty", "grid.operators.isNotNull": "is not empty",
+		"grid.operators.containsAny": "contains any of", "grid.operators.containsAll": "contains all of",
+		"grid.operators.notContainsAny": "contains none of",
+		"grid.operators.isEmpty":        "is empty list", "grid.operators.isNotEmpty": "is not empty list",
 	},
 	"ru": {
 		"grid.members.email": "Почта", "grid.members.team": "Команда", "grid.members.active": "Активен",
 		"grid.members.lastSeenAt": "Был в сети", "grid.members.prefs": "Настройки", "grid.members.id": "ID",
-		"grid.operators.eq": "равно", "grid.operators.contains": "содержит", "grid.operators.starts": "начинается с",
-		"grid.operators.gte": "после", "grid.operators.lte": "до", "grid.operators.between": "между",
+		"grid.operators.eq": "равно", "grid.operators.neq": "не равно",
+		"grid.operators.contains": "содержит", "grid.operators.notContains": "не содержит",
+		"grid.operators.starts": "начинается с", "grid.operators.ends": "заканчивается на",
+		"grid.operators.gt": "после", "grid.operators.gte": "не раньше",
+		"grid.operators.lt": "до", "grid.operators.lte": "не позже", "grid.operators.between": "между", "grid.operators.notBetween": "вне диапазона",
+		"grid.operators.in": "один из", "grid.operators.notIn": "не один из",
+		"grid.operators.isNull": "пусто", "grid.operators.isNotNull": "не пусто",
+		"grid.operators.containsAny": "содержит любой из", "grid.operators.containsAll": "содержит все из",
+		"grid.operators.notContainsAny": "не содержит ни одного из",
+		"grid.operators.isEmpty":        "пустой список", "grid.operators.isNotEmpty": "непустой список",
 	},
 }
 

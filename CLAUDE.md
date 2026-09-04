@@ -28,7 +28,11 @@ Invariants:
 - **`Grid.Binding` and `Column.Binding` are `any` and the core never inspects them.** Only a `Compiler` knows what they carry, and it checks them in `Validate` at `NewRegistry` time. Validation failures are startup errors, not per-request ones.
 - **`Query` handed to a `Compiler` is fully validated**: typed clause values, resolved sort terms, page bounds. Compilers trust it and do not re-check request rules; they append the id tiebreaker themselves. The one thing a compiler re-checks is its own grid binding, because `Grid.ForContext` output is not validated.
 - **Limits live in `request.go` as constants** (groups, clauses, sort columns, page size) and are documented in README. Change both together.
-- **Adding a column type or operator** touches `opsByType`, `buildClause` value conversion, `grjet.clauseExpr`, the constructors in `adapter/grjet/columns.go`, and the README table, in one change. The descriptor is generic and needs nothing.
+- **Adding a column type or operator** touches `opsByType`, `buildClause` value conversion, `grjet.clauseExpr`, the constructors in `adapter/grjet/columns.go`, the README table and the i18n labels in `examples/`, in one change. A new value shape also touches `grpgx.normalize`, which formats by column OID. The descriptor is generic and needs nothing.
+- **Time resolution lives in `BuildQuery`, not in compilers.** `applyStep` validates alignment and widens stepped clauses to `[v, v+step)` buckets with `Clause.UpperOpen`; a compiler only has to honour `UpperOpen` and a `time` upper bound on the next day (`24:00:00`).
+- **`grpgx` never learns grid column types.** It formats by Postgres OID only; when a grid type needs a different wire shape from the same OID (`decimal` vs `number`, both `numeric`), the difference is made in the grjet projection (`DecimalCol` casts to text), not in the executor.
+- **Array columns reuse scalar element conversion.** `buildArrayClause` runs the scalar converter of the element type on every element; do not add element-type logic elsewhere. Array SQL binds one parameter cast to `<elem>[]` so GIN indexes apply.
+- **Operator semantics are fixed:** string operators are case-insensitive, negative operators (`neq`, `notContains`, `notIn`, `notBetween`, boolean `eq false`) match NULL, `isNull`/`isNotNull` are valueless and allowed on every type.
 
 ## Comments in code
 
@@ -45,6 +49,7 @@ Invariants:
 ## Coding
 
 - **Copy the pattern, do not invent:** before a new column constructor, operator, adapter or router, find the nearest existing analogue and repeat its shape.
+- **Column modifiers are methods on `gridraw.Column`** (`Vis`, `WithSearch`, `Nullable`, `WithStep`) so they work with any compiler; only binding-specific ones (`grjet.PgType`) are functions in the adapter. `grjet.Vis`/`grjet.Searchable` stay as deprecated wrappers until v1.
 - **Diff discipline:** no renames, no file moves, no drive-by refactors, no backward-compatibility shims or fallbacks nobody asked for.
 - **Tests as a ladder, not after every minor step.** During a task — `go build ./...` plus the tests of the touched package. The full gate only at boundaries: end of task, before a commit, before saying "done".
 - **The wire format is the contract.** Handler tests pin exact error bodies, descriptor tests pin field names and omitted keys, grjet tests pin SQL fragments and argument order. Do not loosen an assertion to make it pass; if the shape changes, the client changes too.

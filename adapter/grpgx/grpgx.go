@@ -45,9 +45,14 @@ func (e Executor) Count(ctx context.Context, sql string, args []any) (int64, err
 }
 
 // ScanRows maps every row positionally onto keys. jsonb arrives already
-// decoded by pgx (map/slice), so it passes through unchanged.
+// decoded by pgx (map/slice), so it passes through unchanged. date and
+// timestamptz both arrive as time.Time, so the column OID decides the format.
 func ScanRows(rows pgx.Rows, keys []string) ([]map[string]any, error) {
 	out := []map[string]any{}
+	fields := rows.FieldDescriptions()
+	if len(fields) != len(keys) {
+		return nil, fmt.Errorf("scan: %d fields for %d keys", len(fields), len(keys))
+	}
 	for rows.Next() {
 		vals, err := rows.Values()
 		if err != nil {
@@ -58,19 +63,44 @@ func ScanRows(rows pgx.Rows, keys []string) ([]map[string]any, error) {
 		}
 		m := make(map[string]any, len(keys))
 		for i, v := range vals {
-			m[keys[i]] = normalize(v)
+			m[keys[i]] = normalize(v, fields[i].DataTypeOID)
 		}
 		out = append(out, m)
 	}
 	return out, rows.Err()
 }
 
-func normalize(v any) any {
+var elemOID = map[uint32]uint32{
+	pgtype.DateArrayOID:        pgtype.DateOID,
+	pgtype.TimeArrayOID:        pgtype.TimeOID,
+	pgtype.TimestamptzArrayOID: pgtype.TimestamptzOID,
+	pgtype.NumericArrayOID:     pgtype.NumericOID,
+	pgtype.UUIDArrayOID:        pgtype.UUIDOID,
+}
+
+func normalize(v any, oid uint32) any {
 	switch x := v.(type) {
 	case nil:
 		return nil
+	case []any: // pgx surfaces every array as []any of scalar values
+		out := make([]any, len(x))
+		for i, el := range x {
+			out[i] = normalize(el, elemOID[oid])
+		}
+		return out
 	case time.Time:
+		if oid == pgtype.DateOID {
+			return x.Format(time.DateOnly)
+		}
 		return x.UTC().Format(time.RFC3339)
+	case pgtype.Time:
+		if !x.Valid {
+			return nil
+		}
+		if x.Microseconds == int64(24*time.Hour/time.Microsecond) {
+			return "24:00:00" // legal in Postgres time; Add would wrap it to the next day's 00:00:00
+		}
+		return time.Unix(0, 0).UTC().Add(time.Duration(x.Microseconds) * time.Microsecond).Format(time.TimeOnly)
 	case pgtype.Numeric:
 		f, err := x.Float64Value()
 		if err != nil || !f.Valid {

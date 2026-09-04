@@ -4,7 +4,60 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestDescriptorFilterWidget(t *testing.T) {
+	g := validTestGrid()
+	*col(&g, "role") = col(&g, "role").FilterWidget(WidgetTags)
+	byKey := map[string]ColumnDesc{}
+	for _, c := range BuildDescriptor(&g, stubTranslator, "en").Columns {
+		byKey[c.Key] = c
+	}
+	if byKey["role"].Filter.Widget != WidgetTags {
+		t.Errorf("role widget = %q, want %q", byKey["role"].Filter.Widget, WidgetTags)
+	}
+	if raw, _ := json.Marshal(byKey["email"].Filter); strings.Contains(string(raw), `"widget"`) {
+		t.Errorf("column without a widget must omit it: %s", raw)
+	}
+}
+
+func TestDescriptorArray(t *testing.T) {
+	g := validTestGrid()
+	byKey := map[string]ColumnDesc{}
+	for _, c := range BuildDescriptor(&g, stubTranslator, "en").Columns {
+		byKey[c.Key] = c
+	}
+	if c := byKey["tags"]; !c.Array || c.Type != TypeString || c.Sortable {
+		t.Errorf("tags = %+v, want array of string, not sortable", c)
+	}
+	if c := byKey["slots"]; !c.Array || c.Step != 900 {
+		t.Errorf("slots = %+v, want array with step 900", c)
+	}
+	if raw, _ := json.Marshal(byKey["email"]); strings.Contains(string(raw), `"array"`) {
+		t.Errorf("scalar column must not carry array: %s", raw)
+	}
+}
+
+func TestDescriptorStep(t *testing.T) {
+	g := validTestGrid()
+	g.Columns[4].Step = 15 * time.Minute // opensAt
+	d := BuildDescriptor(&g, stubTranslator, "en")
+	byKey := map[string]ColumnDesc{}
+	for _, c := range d.Columns {
+		byKey[c.Key] = c
+	}
+	if byKey["opensAt"].Step != 900 {
+		t.Errorf("opensAt.step = %d, want 900", byKey["opensAt"].Step)
+	}
+	if byKey["createdAt"].Step != 1 {
+		t.Errorf("createdAt.step = %d, want 1 (default)", byKey["createdAt"].Step)
+	}
+	raw, _ := json.Marshal(byKey["birthday"])
+	if strings.Contains(string(raw), `"step"`) {
+		t.Errorf("date column must not carry step: %s", raw)
+	}
+}
 
 func TestBuildDescriptor(t *testing.T) {
 	g := validTestGrid()
@@ -77,15 +130,22 @@ func TestBuildDescriptor(t *testing.T) {
 		t.Errorf("Search.Columns = %v, want to contain %q", d.Search.Columns, emailCol.Title)
 	}
 
-	if idCol.Filter != nil {
-		t.Fatal("id column: Filter is non-nil, want nil (id has no FilterSpec)")
+	if idCol.Filter == nil || len(idCol.Filter.Operators) != 4 {
+		t.Errorf("id column: Filter = %+v, want the four uuid operators", idCol.Filter)
 	}
-	idJSON, err := json.Marshal(idCol)
+	g.Columns = append(g.Columns, Column{Key: "note", Type: TypeString})
+	var noteCol ColumnDesc
+	for _, c := range BuildDescriptor(&g, tr, "ru").Columns {
+		if c.Key == "note" {
+			noteCol = c
+		}
+	}
+	noteJSON, err := json.Marshal(noteCol)
 	if err != nil {
-		t.Fatalf("marshal id column: %v", err)
+		t.Fatalf("marshal note column: %v", err)
 	}
-	if strings.Contains(string(idJSON), `"filter"`) {
-		t.Errorf("id column JSON contains \"filter\" key, want omitted: %s", idJSON)
+	if strings.Contains(string(noteJSON), `"filter"`) {
+		t.Errorf("non-filterable column JSON contains \"filter\" key, want omitted: %s", noteJSON)
 	}
 }
 

@@ -37,12 +37,17 @@ users := gridraw.Grid{
     DefaultSort: gridraw.SortSpec{Column: "createdAt", Dir: "desc"},
     Binding:     grjet.Base(func() postgres.ReadableTable { return table.Users }),
     Columns: []gridraw.Column{
-        grjet.StrColNoFilter("id", table.Users.ID),
-        grjet.Vis(grjet.Searchable(grjet.StrCol("email", table.Users.Email))),
-        grjet.Vis(grjet.TsCol("createdAt", table.Users.CreatedAt)),
+        grjet.UUIDCol("id", table.Users.ID),
+        grjet.StrCol("email", table.Users.Email).WithSearch().Vis(),
+        grjet.TsCol("createdAt", table.Users.CreatedAt).Vis(),
+        grjet.TsCol("lastSeenAt", table.Users.LastSeenAt).Nullable(), // adds isNull / isNotNull; modifiers chain on gridraw.Column
+        grjet.DateCol("birthday", table.Users.Birthday),
+        grjet.TimeCol("opensAt", table.Users.OpensAt),
         grjet.BoolCol("isBanned", table.Users.IsBanned),
-        grjet.EnumCol("role", table.Users.Role, []string{"user", "admin"}),
+        grjet.EnumCol("role", table.Users.Role, []string{"user", "admin"}).FilterWidget(gridraw.WidgetTags),
         grjet.NumCol("rating", table.Users.Rating),
+        grjet.DecimalCol("balance", table.Users.Balance),          // money: exact, string on the wire
+        grjet.PgType("user_status", grjet.EnumCol("status", table.Users.Status, statuses)), // Postgres enum column
         grjet.JSONCol("prefs", table.Users.Prefs),
     },
 }
@@ -72,6 +77,39 @@ Runnable versions of this and of the advanced seams (join, custom binding, per-r
 ### Per-request grids
 
 `Grid.ForContext func(ctx context.Context) Grid`, when set, replaces the definition for each request (for example to pick locale-dependent columns). The result is not re-validated, so derive it from the registered grid.
+
+### Array columns
+
+`Column.Array` makes a column an array of its `Type` (any type but `json`). The descriptor carries `"array": true` next to the element type; rows return JSON arrays of element values. Array columns are never sortable, are searchable only with string elements (the quick search runs over `array_to_string`), and use their own operators instead of the scalar ones:
+
+| operator | SQL | value |
+|---|---|---|
+| `containsAny` | `col && $1` | non-empty array of element values |
+| `containsAll` | `col @> $1` | non-empty array of element values |
+| `notContainsAny` | `col IS NULL OR NOT (col && $1)` | non-empty array of element values |
+| `isEmpty` | `col IS NULL OR cardinality(col) = 0` | none |
+| `isNotEmpty` | `cardinality(col) > 0` | none |
+
+Element matching is exact, including case. The parameter is bound as `<element type>[]` (`text[]`, `uuid[]`, `float8[]`, `decimal[]`, `bool[]`, `date[]`, `time[]`, `timestamptz[]`); when the column's SQL element type differs, name it with `grjet.PgType` (an `integer[]` column, a Postgres enum). `Step` on a `time`/`datetime` array validates alignment and informs the UI but does not widen matching.
+
+```go
+grjet.ArrayCol("tags", table.Posts.Tags, gridraw.TypeString),
+grjet.PgType("int4", grjet.ArrayCol("scores", table.Posts.Scores, gridraw.TypeNumber)), // integer[] column
+grjet.PgType("_locales", grjet.EnumArrayCol("locales", table.Trips.Locales, []string{"en", "ru"})),
+```
+
+### Time resolution
+
+`Column.Step` (a `time.Duration`, default one second; set it with `.WithStep(d)`) sets the resolution of a `time` or `datetime` column: whole seconds, dividing a day. The descriptor publishes it as `step` in seconds so the UI can drop the seconds field, offer 15-minute slots or hours. Filter values must be aligned to the step, otherwise 400. With a step above one second the operators act on whole buckets: `eq 09:15` on a 15-minute column matches `09:15:00` through `09:29:59`, `gt 09:15` starts at `09:30`, `between [09:00, 10:00]` ends before `10:15`. Rows are still returned with seconds; the client formats them by `step`.
+
+```go
+grjet.TimeCol("slot", table.Bookings.Slot).WithStep(15*time.Minute)
+grjet.TsCol("startsAt", table.Shifts.StartsAt).WithStep(time.Hour)
+```
+
+### Postgres enum columns
+
+A column whose SQL type is a Postgres `enum` cannot be compared with a text parameter (`operator does not exist: my_enum = text`). Wrap it in `grjet.PgType("my_enum", …)` and the `in`/`notIn` parameters are cast to that type. On an array column `PgType` names the SQL element type for the array parameter (any element type, e.g. `int4` for an `integer[]` column) and projects the value as `text[]`, since pgx cannot decode arrays of a custom element type. `Binding.ParamType` is the underlying field for hand-written bindings.
 
 ### Custom column bindings
 
@@ -107,15 +145,20 @@ gridraw.Column{
       "filter": {"operators": [{"op": "eq", "label": "equals"}, {"op": "contains", "label": "contains"}]}
     },
     {
+      "key": "slot", "type": "time", "title": "Slot", "sortable": true, "defaultVisible": true, "step": 900,
+      "filter": {"operators": [{"op": "eq", "label": "equals"}, {"op": "between", "label": "between"}]}
+    },
+    {
       "key": "role", "type": "enum", "title": "Role", "sortable": true, "defaultVisible": false,
-      "filter": {"operators": [{"op": "in", "label": "is one of"}],
-                 "enumValues": [{"value": "user", "label": "User"}, {"value": "admin", "label": "Admin"}]}
+      "filter": {"operators": [{"op": "in", "label": "is one of"}, {"op": "notIn", "label": "is not one of"}],
+                 "enumValues": [{"value": "user", "label": "User"}, {"value": "admin", "label": "Admin"}],
+                 "widget": "tags"}
     }
   ]
 }
 ```
 
-`search` is `null` when no column is searchable. `filter` is omitted for non-filterable columns.
+`search` is `null` when no column is searchable. `filter` is omitted for non-filterable columns. `array` is `true` on array columns, whose `type` is then the element type. `step` (seconds) is present on every `time` and `datetime` column, `1` by default. `filter.widget` is a UI hint for the filter input (`checkboxes`, `tags`, or any client-defined value), omitted when unset.
 
 ### `POST <base>/{name}/rows` → rows
 
@@ -151,18 +194,30 @@ Column types and their operators:
 
 | type | operators | value |
 |---|---|---|
-| `string` | `eq`, `contains`, `starts` | string |
-| `number` | `eq`, `gte`, `lte`, `between` | number, or `[a, b]` for between |
-| `datetime` | `gte`, `lte`, `between` | RFC 3339 string, or `[a, b]` |
+| `string` | `eq`, `neq`, `contains`, `notContains`, `starts`, `ends` | string; all case-insensitive |
+| `uuid` | `eq`, `neq`, `in`, `notIn` | canonical uuid string(s), any case; exact match |
+| `number` | `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `between`, `notBetween` | number, or `[a, b]` for the range operators |
+| `decimal` | same as `number` | decimal string (`"19.99"`), or `[a, b]`; JSON numbers are rejected |
+| `date` | `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `between`, `notBetween` | `YYYY-MM-DD` string, or `[a, b]` |
+| `time` | `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `between`, `notBetween` | `HH:MM:SS` or `HH:MM` string, or `[a, b]` |
+| `datetime` | `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `between`, `notBetween` | RFC 3339 string, or `[a, b]` |
 | `boolean` | `eq` | boolean (`eq false` also matches NULL) |
-| `enum` | `in` | non-empty array of strings |
+| `enum` | `in`, `notIn` | non-empty array of strings |
 | `json` | none | display only, not sortable |
+
+Array columns use the array operators instead (see Array columns). Two operators apply to every type and take no value: `isNull` and `isNotNull`. The constructors leave them out; call `.Nullable()` on a column to offer them.
+
+Negative operators (`neq`, `notContains`, `notIn`, `notBetween`) also match NULL: a row with no value is "not equal" to anything.
+
+`time` and `datetime` values must be aligned to the column `step` (see Time resolution); fractional seconds are rejected. A `time` range across midnight (`22:00` to `06:00`) is two OR groups (`gte 22:00`, `lte 06:00`), because a range requires `a <= b`. Use Postgres `time`, not `timetz`.
+
+String operators compile to `ILIKE`, including `eq`, so `eq` matches regardless of case (a change from v0.1.0, where it was exact) and a plain btree index on the column does not serve them; index `lower(col)` or use `pg_trgm` for large tables.
 
 Limits: 10 filter groups, 20 clauses per group, 16 sort columns, page size 1..100.
 
 Errors are `{"error": "<message>"}` with status 404 (unknown grid), 400 (invalid request) or 500 (query failed; details go to the logger).
 
-Row values: `uuid` arrives as a string, `numeric` as a float, `timestamptz` as an RFC 3339 UTC string, `jsonb` as decoded JSON, NULL as `null`.
+Row values: arrays arrive as JSON arrays of the element format below; `uuid` arrives as a lowercase string, `numeric` as a float for `number` columns and as a string with its stored scale for `decimal` columns (`"4.10"`), `date` as `YYYY-MM-DD`, `time` as `HH:MM:SS`, `timestamptz` as an RFC 3339 UTC string, `jsonb` as decoded JSON, NULL as `null`.
 
 ## i18n
 
@@ -176,7 +231,7 @@ The descriptor resolves every label through `Translator(locale, key)` with these
 
 ## Writing your own adapters
 
-- **Compiler**: implement `Validate(*Grid) error` (check that `Grid.Binding` and every `Column.Binding` carry what you need; runs once at `NewRegistry`) and `Compile(*Query) (Statements, error)`. `Query` is fully validated: typed clause values (`string`, `[]string`, `float64`, `time.Time`, `bool`), resolved sort terms, page and page size. Append the id tiebreaker yourself.
+- **Compiler**: implement `Validate(*Grid) error` (check that `Grid.Binding` and every `Column.Binding` carry what you need; runs once at `NewRegistry`) and `Compile(*Query) (Statements, error)`. `Query` is fully validated: typed clause values (`string`, `[]string`, lowercased uuid strings, decimal strings, `float64`, and for array columns a `[]string`/`[]float64`/`[]bool`/`[]time.Time` of elements, `time.Time` for `date`, `time` and `datetime`, `bool`, nothing for `isNull`/`isNotNull`), resolved sort terms, page and page size. Stepped time columns arrive already widened to buckets: `between`/`notBetween` clauses with `Clause.UpperOpen` set mean `[a, b)`, and a `time` upper bound may be the next midnight (`t.Day() != 1`), which Postgres spells `24:00:00`. Append the id tiebreaker yourself.
 - **Executor**: implement `Rows(ctx, sql, args, keys)` returning one `map[string]any` per row keyed positionally by `keys`, and `Count(ctx, sql, args)`.
 - **Router**: call `Handler.Descriptor(w, r, name)` and `Handler.Rows(w, r, name)` from any mux; see `router/grstd` for the shortest example.
 

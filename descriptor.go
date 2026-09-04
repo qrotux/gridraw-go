@@ -1,5 +1,7 @@
 package gridraw
 
+import "time"
+
 // OpDesc is a filter operator with its localized label.
 type OpDesc struct {
 	Op    Op     `json:"op"`
@@ -16,6 +18,7 @@ type EnumValue struct {
 type FilterDesc struct {
 	Operators  []OpDesc    `json:"operators"`
 	EnumValues []EnumValue `json:"enumValues,omitempty"`
+	Widget     string      `json:"widget,omitempty"`
 }
 
 // ColumnDesc is the wire form of a Column.
@@ -25,6 +28,8 @@ type ColumnDesc struct {
 	Title          string      `json:"title"`
 	Sortable       bool        `json:"sortable"`
 	DefaultVisible bool        `json:"defaultVisible"`
+	Step           int         `json:"step,omitempty"`  // seconds; time and datetime only
+	Array          bool        `json:"array,omitempty"` // Type is the element type
 	Filter         *FilterDesc `json:"filter,omitempty"`
 }
 
@@ -65,7 +70,10 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 		title := tr(locale, columnKey(g.Name, c.Key))
 		cd := ColumnDesc{
 			Key: c.Key, Type: c.Type, Title: title,
-			Sortable: c.Sortable, DefaultVisible: c.DefaultVisible,
+			Sortable: c.Sortable, DefaultVisible: c.DefaultVisible, Array: c.Array,
+		}
+		if c.Type == TypeTime || c.Type == TypeDatetime {
+			cd.Step = int(c.step() / time.Second)
 		}
 		if c.Filter != nil {
 			fd := &FilterDesc{}
@@ -75,6 +83,7 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 			for _, v := range c.Enum {
 				fd.EnumValues = append(fd.EnumValues, EnumValue{Value: v, Label: tr(locale, enumKey(g.Name, c.Key, v))})
 			}
+			fd.Widget = c.Filter.Widget
 			cd.Filter = fd
 		}
 		if c.Searchable {
