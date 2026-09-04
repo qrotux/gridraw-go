@@ -7,7 +7,8 @@ import (
 	"github.com/qrotux/gridraw-go"
 )
 
-// Register mounts GET base/{name} and POST base/{name}/rows; guard may be nil.
+// Register mounts GET base/-/list, GET base/-/registry, GET base/{name} and
+// POST base/{name}/rows; guard may be nil.
 func Register(mux *http.ServeMux, base string, guard func(http.Handler) http.Handler, h *gridraw.Handler) {
 	wrap := func(f func(http.ResponseWriter, *http.Request, string)) http.Handler {
 		var hh http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -18,6 +19,15 @@ func Register(mux *http.ServeMux, base string, guard func(http.Handler) http.Han
 		}
 		return hh
 	}
+	wrapAll := func(f func(http.ResponseWriter, *http.Request)) http.Handler {
+		var hh http.Handler = http.HandlerFunc(f)
+		if guard != nil {
+			hh = guard(hh)
+		}
+		return hh
+	}
+	mux.Handle("GET "+base+"/-/list", wrapAll(h.List))
+	mux.Handle("GET "+base+"/-/registry", wrapAll(h.Catalog))
 	mux.Handle("GET "+base+"/{name}", wrap(h.Descriptor))
 	mux.Handle("POST "+base+"/{name}/rows", wrap(h.Rows))
 }

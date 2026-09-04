@@ -161,3 +161,65 @@ func TestBuildDescriptorSearchNilWithoutSearchable(t *testing.T) {
 		t.Errorf("Search = %+v, want nil when no Searchable columns", d.Search)
 	}
 }
+
+// Descriptions come from the grid definition, and a translation of the
+// description key wins over the literal.
+func TestDescriptorDescription(t *testing.T) {
+	g := validTestGrid()
+	g.Description = "Test grid"
+	*col(&g, "email") = col(&g, "email").WithDescription("Login email")
+
+	d := BuildDescriptor(&g, stubTranslator, "en")
+	byKey := map[string]ColumnDesc{}
+	for _, c := range d.Columns {
+		byKey[c.Key] = c
+	}
+	if d.Description != "Test grid" {
+		t.Errorf("grid description = %q, want %q", d.Description, "Test grid")
+	}
+	if byKey["email"].Description != "Login email" {
+		t.Errorf("email description = %q, want %q", byKey["email"].Description, "Login email")
+	}
+	if raw, _ := json.Marshal(byKey["rating"]); strings.Contains(string(raw), `"description"`) {
+		t.Errorf("column without a description must omit it: %s", raw)
+	}
+
+	tr := func(_, key string) string {
+		switch key {
+		case "grid.t.description":
+			return "Тест"
+		case "grid.t.email.description":
+			return "Почта"
+		}
+		return key // the house convention: a miss echoes the key back
+	}
+	d = BuildDescriptor(&g, tr, "ru")
+	if d.Description != "Тест" {
+		t.Errorf("translated grid description = %q, want %q", d.Description, "Тест")
+	}
+	for _, c := range d.Columns {
+		if c.Key == "email" && c.Description != "Почта" {
+			t.Errorf("translated email description = %q, want %q", c.Description, "Почта")
+		}
+		if c.Key == "rating" && c.Description != "" {
+			t.Errorf("rating description = %q, want empty (key echo is a miss)", c.Description)
+		}
+	}
+}
+
+func TestBuildGridEntry(t *testing.T) {
+	g := validTestGrid()
+	g.Description = "Test grid"
+	*col(&g, "email") = col(&g, "email").WithDescription("Login email")
+
+	e := BuildGridEntry(&g, stubTranslator, "en")
+	if e.Name != "t" || e.Description != "Test grid" || len(e.Columns) != len(g.Columns) {
+		t.Fatalf("entry = %+v", e)
+	}
+	if c := e.Columns[1]; c.Key != "email" || c.Type != TypeString || c.Title != "grid.t.email" || c.Description != "Login email" {
+		t.Errorf("email column = %+v", c)
+	}
+	if raw, _ := json.Marshal(e.Columns[2]); strings.Contains(string(raw), `"description"`) {
+		t.Errorf("column without a description must omit it: %s", raw)
+	}
+}

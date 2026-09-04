@@ -32,13 +32,14 @@ import (
 
 users := gridraw.Grid{
     Name:        "users",
+    Description: "Application users", // optional; published in the descriptor and the list endpoints
     IDColumn:    "id",
     PageSize:    25,
     DefaultSort: gridraw.SortSpec{Column: "createdAt", Dir: "desc"},
     Binding:     grjet.Base(func() postgres.ReadableTable { return table.Users }),
     Columns: []gridraw.Column{
         grjet.UUIDCol("id", table.Users.ID),
-        grjet.StrCol("email", table.Users.Email).WithSearch().Vis(),
+        grjet.StrCol("email", table.Users.Email).WithSearch().Vis().WithDescription("Login email"),
         grjet.TsCol("createdAt", table.Users.CreatedAt).Vis(),
         grjet.TsCol("lastSeenAt", table.Users.LastSeenAt).Nullable(), // adds isNull / isNotNull; modifiers chain on gridraw.Column
         grjet.DateCol("birthday", table.Users.Birthday),
@@ -133,6 +134,7 @@ gridraw.Column{
 ```json
 {
   "name": "users",
+  "description": "Application users",
   "idColumn": "id",
   "pageSize": 25,
   "pageSizeOptions": [10, 25, 50, 100],
@@ -140,7 +142,7 @@ gridraw.Column{
   "search": {"columns": ["Email"]},
   "columns": [
     {
-      "key": "email", "type": "string", "title": "Email",
+      "key": "email", "type": "string", "title": "Email", "description": "Login email",
       "sortable": true, "defaultVisible": true,
       "filter": {"operators": [{"op": "eq", "label": "equals"}, {"op": "contains", "label": "contains"}]}
     },
@@ -158,7 +160,32 @@ gridraw.Column{
 }
 ```
 
-`search` is `null` when no column is searchable. `filter` is omitted for non-filterable columns. `array` is `true` on array columns, whose `type` is then the element type. `step` (seconds) is present on every `time` and `datetime` column, `1` by default. `filter.widget` is a UI hint for the filter input (`checkboxes`, `tags`, or any client-defined value), omitted when unset.
+`description` is omitted, on the grid and on a column, when neither a literal `Description` nor a translation is set. `search` is `null` when no column is searchable. `filter` is omitted for non-filterable columns. `array` is `true` on array columns, whose `type` is then the element type. `step` (seconds) is present on every `time` and `datetime` column, `1` by default. `filter.widget` is a UI hint for the filter input (`checkboxes`, `tags`, or any client-defined value), omitted when unset.
+
+### `GET <base>/-/list` → grid list
+
+```json
+[{"name": "orders", "description": "Customer orders"}, {"name": "users", "description": "Application users"}]
+```
+
+Every registered grid, sorted by name. `description` is omitted when unset.
+
+### `GET <base>/-/registry` → grid list with columns
+
+```json
+[
+  {
+    "name": "users",
+    "description": "Application users",
+    "columns": [
+      {"key": "id", "title": "ID", "type": "uuid"},
+      {"key": "email", "title": "Email", "type": "string", "description": "Login email"}
+    ]
+  }
+]
+```
+
+The same list plus the columns of each grid, with localized titles. Columns are listed in declaration order; array columns carry the element type. Both endpoints run `ForContext` per grid and sit behind the same guard as the other routes, so a guard is still the only thing that restricts who sees which grids.
 
 ### `POST <base>/{name}/rows` → rows
 
@@ -228,12 +255,16 @@ The descriptor resolves every label through `Translator(locale, key)` with these
 | column title | `grid.<grid>.<column>` |
 | operator label | `grid.operators.<op>` |
 | enum value label | `grid.<grid>.<column>_values.<value>` |
+| grid description | `grid.<grid>.description` |
+| column description | `grid.<grid>.<column>.description` |
+
+Descriptions are the one label with a literal fallback: `Grid.Description` and `Column.Description` are used as written, and a translation of the description key overrides them. A `Translator` that echoes an unknown key back (the convention the examples follow) therefore counts as a miss, not as a description.
 
 ## Writing your own adapters
 
 - **Compiler**: implement `Validate(*Grid) error` (check that `Grid.Binding` and every `Column.Binding` carry what you need; runs once at `NewRegistry`) and `Compile(*Query) (Statements, error)`. `Query` is fully validated: typed clause values (`string`, `[]string`, lowercased uuid strings, decimal strings, `float64`, and for array columns a `[]string`/`[]float64`/`[]bool`/`[]time.Time` of elements, `time.Time` for `date`, `time` and `datetime`, `bool`, nothing for `isNull`/`isNotNull`), resolved sort terms, page and page size. Stepped time columns arrive already widened to buckets: `between`/`notBetween` clauses with `Clause.UpperOpen` set mean `[a, b)`, and a `time` upper bound may be the next midnight (`t.Day() != 1`), which Postgres spells `24:00:00`. Append the id tiebreaker yourself.
 - **Executor**: implement `Rows(ctx, sql, args, keys)` returning one `map[string]any` per row keyed positionally by `keys`, and `Count(ctx, sql, args)`.
-- **Router**: call `Handler.Descriptor(w, r, name)` and `Handler.Rows(w, r, name)` from any mux; see `router/grstd` for the shortest example.
+- **Router**: call `Handler.Descriptor(w, r, name)`, `Handler.Rows(w, r, name)`, `Handler.List(w, r)` and `Handler.Catalog(w, r)` from any mux; see `router/grstd` for the shortest example.
 
 ## Tests
 

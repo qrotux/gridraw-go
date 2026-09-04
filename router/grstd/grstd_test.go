@@ -19,7 +19,7 @@ func (nopCompiler) Compile(*gridraw.Query) (gridraw.Statements, error) {
 
 func testGrid() gridraw.Grid {
 	return gridraw.Grid{
-		Name: "t", IDColumn: "id", PageSize: 25,
+		Name: "t", Description: "Test grid", IDColumn: "id", PageSize: 25,
 		DefaultSort: gridraw.SortSpec{Column: "id", Dir: "asc"},
 		Columns:     []gridraw.Column{{Key: "id", Type: gridraw.TypeString, Sortable: true}},
 	}
@@ -70,6 +70,34 @@ func TestRoutes(t *testing.T) {
 		var d gridraw.Descriptor
 		if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil || d.Name != "t" {
 			t.Errorf("descriptor body = %s (err %v)", rec.Body.String(), err)
+		}
+
+		rec = httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/grids/-/list", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list: status = %d; body=%s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("X-Guard"); got != wantGuard {
+			t.Errorf("list: X-Guard = %q, want %q", got, wantGuard)
+		}
+		if want := `[{"name":"t","description":"Test grid"}]` + "\n"; rec.Body.String() != want {
+			t.Errorf("list body = %q, want %q", rec.Body.String(), want)
+		}
+
+		rec = httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/grids/-/registry", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("registry: status = %d; body=%s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("X-Guard"); got != wantGuard {
+			t.Errorf("registry: X-Guard = %q, want %q", got, wantGuard)
+		}
+		var entries []gridraw.GridEntry
+		if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+			t.Fatalf("registry body = %s (err %v)", rec.Body.String(), err)
+		}
+		if len(entries) != 1 || entries[0].Name != "t" || len(entries[0].Columns) != 1 || entries[0].Columns[0].Key != "id" {
+			t.Errorf("registry = %+v", entries)
 		}
 
 		rec = httptest.NewRecorder()

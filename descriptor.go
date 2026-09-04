@@ -26,6 +26,7 @@ type ColumnDesc struct {
 	Key            string      `json:"key"`
 	Type           ColType     `json:"type"`
 	Title          string      `json:"title"`
+	Description    string      `json:"description,omitempty"`
 	Sortable       bool        `json:"sortable"`
 	DefaultVisible bool        `json:"defaultVisible"`
 	Step           int         `json:"step,omitempty"`  // seconds; time and datetime only
@@ -41,6 +42,7 @@ type SearchInfo struct {
 // Descriptor is the wire form of a Grid.
 type Descriptor struct {
 	Name            string       `json:"name"`
+	Description     string       `json:"description,omitempty"`
 	IDColumn        string       `json:"idColumn"`
 	PageSize        int          `json:"pageSize"`
 	PageSizeOptions []int        `json:"pageSizeOptions"`
@@ -50,10 +52,68 @@ type Descriptor struct {
 }
 
 // i18n key convention: column titles "grid.<grid>.<column>", operator labels
-// "grid.operators.<op>", enum labels "grid.<grid>.<column>_values.<value>".
+// "grid.operators.<op>", enum labels "grid.<grid>.<column>_values.<value>",
+// descriptions "grid.<grid>.description" and "grid.<grid>.<column>.description".
 func columnKey(gridName, key string) string  { return "grid." + gridName + "." + key }
 func operatorKey(op Op) string               { return "grid.operators." + string(op) }
 func enumKey(gridName, key, v string) string { return "grid." + gridName + "." + key + "_values." + v }
+func gridDescKey(gridName string) string     { return "grid." + gridName + ".description" }
+func columnDescKey(gridName, key string) string {
+	return columnKey(gridName, key) + ".description"
+}
+
+// describe prefers the translation of key over the literal description written
+// in the grid. A Translator that has no entry is expected to echo the key back,
+// so a returned key counts as a miss.
+func describe(tr Translator, locale, key, lit string) string {
+	if t := tr(locale, key); t != "" && t != key {
+		return t
+	}
+	return lit
+}
+
+// GridInfo is one entry of the list endpoint.
+type GridInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// ColumnInfo is one column of a registry entry.
+type ColumnInfo struct {
+	Key         string  `json:"key"`
+	Title       string  `json:"title"`
+	Type        ColType `json:"type"`
+	Description string  `json:"description,omitempty"`
+}
+
+// GridEntry is one entry of the registry endpoint: a grid with its columns.
+type GridEntry struct {
+	Name        string       `json:"name"`
+	Description string       `json:"description,omitempty"`
+	Columns     []ColumnInfo `json:"columns"`
+}
+
+// BuildGridInfo renders the list entry of a grid, resolving its description through tr.
+func BuildGridInfo(g *Grid, tr Translator, locale string) GridInfo {
+	return GridInfo{Name: g.Name, Description: describe(tr, locale, gridDescKey(g.Name), g.Description)}
+}
+
+// BuildGridEntry renders the registry entry of a grid, resolving titles and
+// descriptions through tr.
+func BuildGridEntry(g *Grid, tr Translator, locale string) GridEntry {
+	e := GridEntry{
+		Name:        g.Name,
+		Description: describe(tr, locale, gridDescKey(g.Name), g.Description),
+		Columns:     make([]ColumnInfo, 0, len(g.Columns)),
+	}
+	for _, c := range g.Columns {
+		e.Columns = append(e.Columns, ColumnInfo{
+			Key: c.Key, Title: tr(locale, columnKey(g.Name, c.Key)), Type: c.Type,
+			Description: describe(tr, locale, columnDescKey(g.Name, c.Key), c.Description),
+		})
+	}
+	return e
+}
 
 // BuildDescriptor renders a grid for the client, resolving titles through tr.
 func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
@@ -62,7 +122,8 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 		opts = defaultPageSizeOptions // grids built outside NewRegistry are not normalized
 	}
 	d := Descriptor{
-		Name: g.Name, IDColumn: g.IDColumn, PageSize: g.PageSize,
+		Name: g.Name, Description: describe(tr, locale, gridDescKey(g.Name), g.Description),
+		IDColumn: g.IDColumn, PageSize: g.PageSize,
 		PageSizeOptions: opts, DefaultSort: g.DefaultSort,
 	}
 	var searchTitles []string
@@ -70,7 +131,8 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 		title := tr(locale, columnKey(g.Name, c.Key))
 		cd := ColumnDesc{
 			Key: c.Key, Type: c.Type, Title: title,
-			Sortable: c.Sortable, DefaultVisible: c.DefaultVisible, Array: c.Array,
+			Description: describe(tr, locale, columnDescKey(g.Name, c.Key), c.Description),
+			Sortable:    c.Sortable, DefaultVisible: c.DefaultVisible, Array: c.Array,
 		}
 		if c.Type == TypeTime || c.Type == TypeDatetime {
 			cd.Step = int(c.step() / time.Second)

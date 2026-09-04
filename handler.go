@@ -65,6 +65,28 @@ func (h *Handler) Descriptor(w http.ResponseWriter, r *http.Request, name string
 	writeJSON(w, http.StatusOK, BuildDescriptor(g.Resolve(r.Context()), h.opts.Translator, h.opts.Locale(r)))
 }
 
+// List answers GET <base>/-/list: every registered grid by name and description.
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	names := h.opts.Registry.Names()
+	out := make([]GridInfo, 0, len(names))
+	for _, name := range names {
+		g, _ := h.opts.Registry.Get(name)
+		out = append(out, BuildGridInfo(g.Resolve(r.Context()), h.opts.Translator, h.opts.Locale(r)))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// Catalog answers GET <base>/-/registry: every registered grid with its columns.
+func (h *Handler) Catalog(w http.ResponseWriter, r *http.Request) {
+	names := h.opts.Registry.Names()
+	out := make([]GridEntry, 0, len(names))
+	for _, name := range names {
+		g, _ := h.opts.Registry.Get(name)
+		out = append(out, BuildGridEntry(g.Resolve(r.Context()), h.opts.Translator, h.opts.Locale(r)))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // Rows answers POST <base>/{name}/rows.
 func (h *Handler) Rows(w http.ResponseWriter, r *http.Request, name string) {
 	g, ok := h.grid(w, name)

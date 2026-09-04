@@ -2,6 +2,8 @@
 //
 //	DATABASE_URL=postgres://user:pass@localhost:5432/db go run ./examples/basic
 //	curl localhost:8080/api/grids/users
+//	curl localhost:8080/api/grids/-/list
+//	curl localhost:8080/api/grids/-/registry
 //	curl -X POST localhost:8080/api/grids/users/rows -d '{"columns":["email","role"],"search":"ann"}'
 package main
 
@@ -84,13 +86,14 @@ func main() {
 
 	grid := gridraw.Grid{
 		Name:        "users",
+		Description: "Application users",
 		IDColumn:    "id",
 		PageSize:    10,
 		DefaultSort: gridraw.SortSpec{Column: "createdAt", Dir: "desc"},
 		Binding:     grjet.Base(func() postgres.ReadableTable { return users }),
 		Columns: []gridraw.Column{
 			grjet.UUIDCol("id", colID),
-			grjet.StrCol("email", colEmail).WithSearch().Vis(),
+			grjet.StrCol("email", colEmail).WithSearch().Vis().WithDescription("Login email"),
 			grjet.EnumCol("role", colRole, []string{"user", "admin"}).Vis(),
 			grjet.NumCol("rating", colRating),
 			grjet.BoolCol("isBanned", colIsBanned),

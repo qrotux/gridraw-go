@@ -4,6 +4,7 @@
 //
 //	DATABASE_URL=postgres://user:pass@localhost:5432/db API_KEY=secret go run ./examples/advanced
 //	curl -H 'X-Api-Key: secret' -H 'Accept-Language: ru' localhost:8080/api/grids/members
+//	curl -H 'X-Api-Key: secret' -H 'Accept-Language: ru' localhost:8080/api/grids/-/registry
 //	curl -H 'X-Api-Key: secret' -H 'X-Role: admin' -X POST localhost:8080/api/grids/members/rows \
 //	     -d '{"columns":["email","team","active"],"filters":[[{"field":"active","op":"eq","value":false}]]}'
 package main
@@ -98,6 +99,7 @@ var i18n = map[string]map[string]string{
 	"en": {
 		"grid.members.email": "Email", "grid.members.team": "Team", "grid.members.active": "Active",
 		"grid.members.lastSeenAt": "Last seen", "grid.members.prefs": "Preferences", "grid.members.id": "ID",
+		"grid.members.description": "Team members", "grid.members.email.description": "Login email",
 		"grid.operators.eq": "equals", "grid.operators.neq": "does not equal",
 		"grid.operators.contains": "contains", "grid.operators.notContains": "does not contain",
 		"grid.operators.starts": "starts with", "grid.operators.ends": "ends with",
@@ -112,6 +114,7 @@ var i18n = map[string]map[string]string{
 	"ru": {
 		"grid.members.email": "Почта", "grid.members.team": "Команда", "grid.members.active": "Активен",
 		"grid.members.lastSeenAt": "Был в сети", "grid.members.prefs": "Настройки", "grid.members.id": "ID",
+		"grid.members.description": "Участники команды", "grid.members.email.description": "Почта для входа",
 		"grid.operators.eq": "равно", "grid.operators.neq": "не равно",
 		"grid.operators.contains": "содержит", "grid.operators.notContains": "не содержит",
 		"grid.operators.starts": "начинается с", "grid.operators.ends": "заканчивается на",

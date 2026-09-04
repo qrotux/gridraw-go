@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -227,4 +228,53 @@ func TestForContextResolvesPerRequestHTTP(t *testing.T) {
 			t.Errorf("error = %q, want %q", body["error"], `unknown column "rating"`)
 		}
 	})
+}
+
+func TestHandlerList(t *testing.T) {
+	other := validTestGrid()
+	other.Name = "a"
+	other.Description = "First"
+	h := newTestHandler(t, validTestGrid(), other)
+
+	rec := httptest.NewRecorder()
+	h.List(rec, httptest.NewRequest(http.MethodGet, "/grids/-/list", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	var got []GridInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v; body=%s", err, rec.Body.String())
+	}
+	want := []GridInfo{{Name: "a", Description: "First"}, {Name: "t"}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("list = %+v, want %+v", got, want)
+	}
+	if strings.Contains(rec.Body.String(), `{"name":"t","description"`) {
+		t.Errorf("a grid without a description must omit it: %s", rec.Body.String())
+	}
+}
+
+func TestHandlerCatalog(t *testing.T) {
+	g := validTestGrid()
+	g.Description = "Test grid"
+	h := newTestHandler(t, g)
+
+	rec := httptest.NewRecorder()
+	h.Catalog(rec, httptest.NewRequest(http.MethodGet, "/grids/-/registry", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	var got []GridEntry
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v; body=%s", err, rec.Body.String())
+	}
+	if len(got) != 1 || got[0].Name != "t" || got[0].Description != "Test grid" {
+		t.Fatalf("registry = %+v", got)
+	}
+	if len(got[0].Columns) != len(g.Columns) {
+		t.Fatalf("columns = %d, want %d", len(got[0].Columns), len(g.Columns))
+	}
+	if c := got[0].Columns[0]; c.Key != "id" || c.Type != TypeUUID || c.Title != "grid.t.id" {
+		t.Errorf("id column = %+v", c)
+	}
 }

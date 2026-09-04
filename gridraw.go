@@ -120,8 +120,12 @@ const (
 // project, filter and sort it (for grjet: the go-jet expressions); the core
 // never inspects it.
 type Column struct {
-	Key            string
-	Type           ColType
+	Key  string
+	Type ColType
+	// Description is free-form documentation of the column, published in the
+	// descriptor and the registry endpoint; a translation of
+	// "grid.<grid>.<column>.description" overrides it.
+	Description    string
 	Filter         *FilterSpec
 	Sortable       bool
 	Searchable     bool // TypeString only; joins the quick-search OR
@@ -155,6 +159,9 @@ func (c Column) FilterWidget(w string) Column {
 	return c
 }
 
+// WithDescription documents the column; see Column.Description.
+func (c Column) WithDescription(d string) Column { c.Description = d; return c }
+
 // WithSearch adds the column to the quick search (TypeString only).
 func (c Column) WithSearch() Column { c.Searchable = true; return c }
 
@@ -185,7 +192,11 @@ var defaultPageSizeOptions = []int{10, 25, 50, 100}
 // Grid is a grid definition. Binding carries the Compiler-specific data
 // source (for grjet: the base table); the core never inspects it.
 type Grid struct {
-	Name            string
+	Name string
+	// Description is free-form documentation of the grid, published in the
+	// descriptor and the list and registry endpoints; a translation of
+	// "grid.<grid>.description" overrides it.
+	Description     string
 	IDColumn        string
 	PageSize        int
 	PageSizeOptions []int
