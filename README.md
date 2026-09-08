@@ -286,7 +286,7 @@ The pgx test creates a temporary table only and skips when the variable is unset
 ## Links
 
 - Client: [`@qrotux/gridraw-shadcn-react`](https://github.com/qrotux/gridraw-shadcn-react)
-- CLI: [`@qrotux/gridraw-cli`](https://github.com/qrotux/gridraw-cli)
+- CLI: [gridraw-cli](https://github.com/qrotux/gridraw-cli)
 - API reference: [pkg.go.dev/github.com/qrotux/gridraw-go](https://pkg.go.dev/github.com/qrotux/gridraw-go)
 
 ## Dependencies
