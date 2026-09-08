@@ -1,14 +1,14 @@
 # gridraw-go
 
-Server side of the gridraw data grid: a grid is declared once in Go, validated at startup, published to the client as a JSON descriptor, and served as filtered, sorted, paginated row pages. The matching React UI is `@qrotux/gridraw-shadcn-react`.
+Server side of the gridraw data grid: a grid is declared once in Go, validated at startup, published to the client as a JSON descriptor, and served as filtered, sorted, paginated row pages. The matching React UI is [`@qrotux/gridraw-shadcn-react`](https://github.com/qrotux/gridraw-shadcn-react).
 
 The core package `gridraw` knows nothing about SQL, drivers or routers. Those are pluggable:
 
 | Seam | Interface | Shipped adapter |
 |---|---|---|
-| SQL generation | `gridraw.Compiler` | `adapter/grjet` (go-jet, Postgres dialect) |
-| SQL execution | `gridraw.Executor` | `adapter/grpgx` (pgx v5) |
-| HTTP routing | `gridraw.Handler` methods | `router/grchi` (chi v5), `router/grstd` (net/http ServeMux) |
+| SQL generation | `gridraw.Compiler` | `adapter/grjet` ([go-jet](https://github.com/go-jet/jet), Postgres dialect) |
+| SQL execution | `gridraw.Executor` | `adapter/grpgx` ([pgx](https://github.com/jackc/pgx) v5) |
+| HTTP routing | `gridraw.Handler` methods | `router/grchi` ([chi](https://github.com/go-chi/chi) v5), `router/grstd` (net/http ServeMux) |
 
 ## Install
 
@@ -282,6 +282,21 @@ GRIDRAW_TEST_DATABASE_URL=postgres://user:pass@localhost:5432/db go test ./adapt
 ```
 
 The pgx test creates a temporary table only and skips when the variable is unset.
+
+## Links
+
+- Client: [`@qrotux/gridraw-shadcn-react`](https://github.com/qrotux/gridraw-shadcn-react)
+- CLI: [`@qrotux/gridraw-cli`](https://github.com/qrotux/gridraw-cli)
+- API reference: [pkg.go.dev/github.com/qrotux/gridraw-go](https://pkg.go.dev/github.com/qrotux/gridraw-go)
+
+## Dependencies
+
+The core package imports only the standard library. Each adapter brings its own:
+
+- `adapter/grjet`: [go-jet/jet](https://github.com/go-jet/jet) v2
+- `adapter/grpgx`: [jackc/pgx](https://github.com/jackc/pgx) v5
+- `router/grchi`: [go-chi/chi](https://github.com/go-chi/chi) v5
+- `router/grstd`: none
 
 ## License
 
