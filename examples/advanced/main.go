@@ -1,16 +1,20 @@
 // Command advanced shows the seams beyond the basic wiring: a joined table,
-// a hand-written binding, a per-request grid, a guard middleware, locale
-// negotiation and a custom logger, all on net/http's ServeMux.
+// a hand-written binding, custom operators, a per-request grid, a guard
+// middleware, locale negotiation and a custom logger, all on net/http's
+// ServeMux.
 //
 //	DATABASE_URL=postgres://user:pass@localhost:5432/db API_KEY=secret go run ./examples/advanced
 //	curl -H 'X-Api-Key: secret' -H 'Accept-Language: ru' localhost:8080/api/grids/members
 //	curl -H 'X-Api-Key: secret' -H 'Accept-Language: ru' localhost:8080/api/grids/-/registry
 //	curl -H 'X-Api-Key: secret' -H 'X-Role: admin' -X POST localhost:8080/api/grids/members/rows \
 //	     -d '{"columns":["email","team","active"],"filters":[[{"field":"active","op":"eq","value":false}]]}'
+//	curl -H 'X-Api-Key: secret' -H 'X-Role: admin' -X POST localhost:8080/api/grids/members/rows \
+//	     -d '{"columns":["email","prefs"],"filters":[[{"field":"prefs","op":"hasKey","value":"theme"}]]}'
 package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"log/slog"
 	"net/http"
@@ -58,19 +62,26 @@ func membersGrid() gridraw.Grid {
 		IDColumn:    "id",
 		PageSize:    25,
 		DefaultSort: gridraw.SortSpec{Column: "email", Dir: "asc"},
-		Binding:     grjet.Base(joined),
+		Binding: grjet.Base(joined).WithScope(func(ctx context.Context) (postgres.BoolExpression, error) {
+			role, ok := ctx.Value(roleKey{}).(string)
+			if !ok {
+				return nil, errors.New("caller role missing")
+			}
+			if role == "admin" {
+				return postgres.Bool(true), nil
+			}
+			return colActive.IS_TRUE(), nil
+		}),
 		Columns: []gridraw.Column{
 			grjet.UUIDCol("id", colID),
 			grjet.StrCol("email", colEmail).WithSearch().Vis(),
 			grjet.JoinStrCol("team", colTeamName).WithSearch().Vis(),
 			// A nullable boolean: the filter treats NULL as false through
 			// COALESCE while the projection still shows null to the client.
-			grjet.Bind(grjet.BoolCol("active", colActive), grjet.Binding{
-				Projection: colActive,
-				Filter:     postgres.COALESCE(colActive, postgres.Bool(false)),
-			}).Vis(),
+			grjet.WithFilterExpr(grjet.BoolCol("active", colActive),
+				postgres.COALESCE(colActive, postgres.Bool(false))).Vis(),
 			grjet.TsCol("lastSeenAt", colLastSeen).Nullable(), // NULL means "never seen"
-			grjet.JSONCol("prefs", colPrefs),
+			prefsCol(),
 		},
 	}
 	base.ForContext = func(ctx context.Context) gridraw.Grid {
@@ -91,6 +102,29 @@ func membersGrid() gridraw.Grid {
 	return base
 }
 
+// prefsCol filters the jsonb column with an operator the core does not know:
+// CustomOps validates the request value, Binding.Compile renders the SQL.
+func prefsCol() gridraw.Column {
+	c := grjet.JSONCol("prefs", colPrefs)
+	c.Filter = &gridraw.FilterSpec{}
+	c.Custom = &gridraw.CustomOps{
+		Operators: []gridraw.Op{"hasKey"},
+		Parse: func(_ gridraw.Op, raw any) (any, any, error) {
+			key, ok := raw.(string)
+			if !ok || key == "" {
+				return nil, nil, errors.New("hasKey expects a non-empty string")
+			}
+			return key, nil, nil
+		},
+	}
+	return grjet.Bind(c, grjet.Binding{
+		Projection: colPrefs,
+		Compile: func(f postgres.Expression, cl gridraw.Clause) (postgres.BoolExpression, bool) {
+			return postgres.BoolExp(postgres.Func("jsonb_exists", f, postgres.String(cl.Value.(string)))), true
+		},
+	})
+}
+
 var i18n = map[string]map[string]string{
 	"en": {
 		"grid.members.email": "Email", "grid.members.team": "Team", "grid.members.active": "Active",
@@ -107,6 +141,7 @@ var i18n = map[string]map[string]string{
 		"grid.operators.containsOnly":   "contains only",
 		"grid.operators.notContainsAny": "contains none of",
 		"grid.operators.isEmpty":        "is empty list", "grid.operators.isNotEmpty": "is not empty list",
+		"grid.operators.hasKey": "has key",
 	},
 	"ru": {
 		"grid.members.email": "Почта", "grid.members.team": "Команда", "grid.members.active": "Активен",
@@ -123,6 +158,7 @@ var i18n = map[string]map[string]string{
 		"grid.operators.containsOnly":   "содержит только",
 		"grid.operators.notContainsAny": "не содержит ни одного из",
 		"grid.operators.isEmpty":        "пустой список", "grid.operators.isNotEmpty": "непустой список",
+		"grid.operators.hasKey": "содержит ключ",
 	},
 }
 

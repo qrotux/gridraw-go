@@ -67,10 +67,38 @@ func columnDescKey(gridName, key string) string {
 // in the grid. A Translator that has no entry is expected to echo the key back,
 // so a returned key counts as a miss.
 func describe(tr Translator, locale, key, lit string) string {
+	if tr == nil {
+		return lit
+	}
 	if t := tr(locale, key); t != "" && t != key {
 		return t
 	}
 	return lit
+}
+
+// WithTitles adds literal title fallbacks keyed by grid.<grid>.<column>, copying the supplied map.
+func WithTitles(tr Translator, titles map[string]string) Translator {
+	literals := make(map[string]string, len(titles))
+	for key, title := range titles {
+		literals[key] = title
+	}
+	return func(locale, key string) string {
+		translated := key
+		if tr != nil {
+			translated = tr(locale, key)
+		}
+		if title, ok := literals[key]; ok && (translated == "" || translated == key) {
+			return title
+		}
+		return translated
+	}
+}
+
+func label(tr Translator, locale, key, fallback string) string {
+	if tr == nil {
+		return fallback
+	}
+	return tr(locale, key)
 }
 
 // GridInfo is one entry of the list endpoint.
@@ -109,7 +137,7 @@ func BuildGridEntry(g *Grid, tr Translator, locale string) GridEntry {
 	}
 	for _, c := range g.Columns {
 		e.Columns = append(e.Columns, ColumnInfo{
-			Key: c.Key, Title: tr(locale, columnKey(g.Name, c.Key)), Type: c.Type,
+			Key: c.Key, Title: label(tr, locale, columnKey(g.Name, c.Key), c.Key), Type: c.Type,
 			Description: describe(tr, locale, columnDescKey(g.Name, c.Key), c.Description),
 		})
 	}
@@ -129,7 +157,7 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 	}
 	var searchTitles []string
 	for _, c := range g.Columns {
-		title := tr(locale, columnKey(g.Name, c.Key))
+		title := label(tr, locale, columnKey(g.Name, c.Key), c.Key)
 		cd := ColumnDesc{
 			Key: c.Key, Type: c.Type, Title: title,
 			Description: describe(tr, locale, columnDescKey(g.Name, c.Key), c.Description),
@@ -141,10 +169,10 @@ func BuildDescriptor(g *Grid, tr Translator, locale string) Descriptor {
 		if c.Filter != nil {
 			fd := &FilterDesc{}
 			for _, op := range c.operators() {
-				fd.Operators = append(fd.Operators, OpDesc{Op: op, Label: tr(locale, operatorKey(op))})
+				fd.Operators = append(fd.Operators, OpDesc{Op: op, Label: label(tr, locale, operatorKey(op), string(op))})
 			}
 			for _, v := range c.Enum {
-				fd.EnumValues = append(fd.EnumValues, EnumValue{Value: v, Label: tr(locale, enumKey(g.Name, c.Key, v))})
+				fd.EnumValues = append(fd.EnumValues, EnumValue{Value: v, Label: label(tr, locale, enumKey(g.Name, c.Key, v), v)})
 			}
 			fd.Widget = c.Filter.Widget
 			cd.Filter = fd

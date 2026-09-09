@@ -125,6 +125,37 @@ func EnumArrayCol(key string, c postgres.Expression, values []string) gridraw.Co
 // binding must cast its projection to text itself; see Binding.
 func Bind(c gridraw.Column, b Binding) gridraw.Column { c.Binding = b; return c }
 
+// WithFilterExpr replaces only the filter expression, preserving projection, sort and custom rendering.
+func WithFilterExpr(c gridraw.Column, expr postgres.Expression) gridraw.Column {
+	if b, ok := c.Binding.(Binding); ok {
+		b.Filter = expr
+		c.Binding = b
+	}
+	return c
+}
+
+func expressionColumn(key string, expr postgres.Expression, typ gridraw.ColType) gridraw.Column {
+	return gridraw.Column{Key: key, Type: typ, Sortable: true,
+		Binding: Binding{Projection: expr, Filter: expr, Sort: expr}, Filter: &gridraw.FilterSpec{}}
+}
+
+// StrExpr is a sortable, filterable string expression column.
+func StrExpr(key string, expr postgres.Expression) gridraw.Column {
+	return expressionColumn(key, expr, gridraw.TypeString)
+}
+
+// BoolExpr is a sortable boolean expression column with an eq filter.
+func BoolExpr(key string, expr postgres.Expression) gridraw.Column {
+	return expressionColumn(key, expr, gridraw.TypeBool)
+}
+
+// DecimalExpr projects an exact-number expression as text while filtering and sorting numerically.
+func DecimalExpr(key string, expr postgres.Expression) gridraw.Column {
+	c := expressionColumn(key, expr, gridraw.TypeDecimal)
+	c.Binding = Binding{Projection: postgres.CAST(expr).AS_TEXT().AS(key), Filter: expr, Sort: expr}
+	return c
+}
+
 // Vis marks a column visible by default.
 //
 // Deprecated: use gridraw.Column.Vis.

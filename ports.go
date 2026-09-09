@@ -17,6 +17,12 @@ type Compiler interface {
 	Compile(q *Query) (Statements, error)
 }
 
+// ContextCompiler optionally compiles with request context; Handler prefers it over Compile.
+type ContextCompiler interface {
+	Compiler
+	CompileContext(ctx context.Context, q *Query) (Statements, error)
+}
+
 // Executor runs the compiled SQL. Rows returns one map per row keyed by keys
 // in projection order.
 type Executor interface {

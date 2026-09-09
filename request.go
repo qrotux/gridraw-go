@@ -46,13 +46,17 @@ func badReq(format string, a ...any) *ReqError {
 
 // Clause is a validated, typed predicate. Value2 is the upper bound of the
 // range operators; UpperOpen marks it exclusive ([Value, Value2) instead of
-// [Value, Value2]), which is how stepped time columns are expressed.
+// [Value, Value2]), which is how stepped time columns are expressed. Custom
+// marks a clause whose value came from CustomOps.Parse: a compiler routes it
+// to its custom renderer and never confuses it with a built-in operator of
+// the same name (a stepped eq widened to between stays built-in).
 type Clause struct {
 	Col       Column
 	Op        Op
 	Value     any
 	Value2    any
 	UpperOpen bool
+	Custom    bool
 }
 
 // SortTerm is a validated sort term.
@@ -183,6 +187,14 @@ func buildClause(g *Grid, fc FilterClause) (Clause, *ReqError) {
 		return Clause{}, badReq("op %q not allowed for field %q", fc.Op, fc.Field)
 	}
 	c := Clause{Col: col, Op: fc.Op}
+	if col.customOp(fc.Op) {
+		v, v2, err := col.Custom.Parse(fc.Op, fc.Value)
+		if err != nil {
+			return Clause{}, badReq("field %q: %v", fc.Field, err)
+		}
+		c.Value, c.Value2, c.Custom = v, v2, true
+		return c, nil
+	}
 	if valueless(fc.Op) {
 		return c, nil // value ignored
 	}

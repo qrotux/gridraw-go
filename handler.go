@@ -3,13 +3,12 @@ package gridraw
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 )
 
 // RowsResponse is the body of the rows endpoint. Total is absent when the
-// request asked to skip the count; HasPrev and HasNext are always present.
+// grid skips the count; HasPrev and HasNext are always present.
 type RowsResponse struct {
 	Rows    []map[string]any `json:"rows"`
 	Total   *int64           `json:"total,omitempty"`
@@ -37,6 +36,9 @@ type Handler struct {
 func NewHandler(opts Options) *Handler {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
+	}
+	if opts.Locale == nil {
+		opts.Locale = func(*http.Request) string { return "" }
 	}
 	return &Handler{opts: opts}
 }
@@ -92,11 +94,11 @@ func (h *Handler) Catalog(w http.ResponseWriter, r *http.Request) {
 
 // Rows answers POST <base>/{name}/rows.
 func (h *Handler) Rows(w http.ResponseWriter, r *http.Request, name string) {
-	g, ok := h.grid(w, name)
-	if !ok {
+	g, lookupErr := h.resolveGrid(r.Context(), name)
+	if lookupErr != nil {
+		writeJSON(w, lookupErr.Status, map[string]string{"error": lookupErr.Msg})
 		return
 	}
-	g = g.Resolve(r.Context())
 	var req RowsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
@@ -114,34 +116,6 @@ func (h *Handler) Rows(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
-}
-
-func (h *Handler) execute(ctx context.Context, q *Query) (*RowsResponse, error) {
-	if h.opts.Executor == nil {
-		return nil, errors.New("no executor")
-	}
-	st, err := h.opts.Compiler.Compile(q)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := h.opts.Executor.Rows(ctx, st.RowsSQL, st.RowsArgs, q.Keys)
-	if err != nil {
-		return nil, err
-	}
-	resp := &RowsResponse{Rows: rows, HasPrev: q.Page > 1}
-	// The compiler asked for one row more than the page; its presence is the
-	// answer to hasNext. A compiler that ignores RowLimit only loses hasNext.
-	if len(rows) > q.PageSize {
-		resp.Rows, resp.HasNext = rows[:q.PageSize], true
-	}
-	if q.WithTotal {
-		total, err := h.opts.Executor.Count(ctx, st.CountSQL, st.CountArgs)
-		if err != nil {
-			return nil, err
-		}
-		resp.Total = &total
-	}
-	return resp, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

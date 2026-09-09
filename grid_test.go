@@ -142,6 +142,24 @@ func TestNewRegistryRejects(t *testing.T) {
 		{"step not whole seconds", func(g *Grid) { g.Columns[4].Step = 1500 * time.Millisecond }, "whole seconds"},
 		{"step not dividing a day", func(g *Grid) { g.Columns[4].Step = 7 * time.Minute }, "dividing a day"},
 		{"step longer than a day", func(g *Grid) { g.Columns[4].Step = 25 * time.Hour }, "dividing a day"},
+		{"custom without filter", func(g *Grid) {
+			g.Columns = append(g.Columns, Column{Key: "geo", Type: "point", Custom: &CustomOps{Operators: []Op{"within"}, Parse: parseRaw}})
+		}, "without a filter"},
+		{"custom without parse", func(g *Grid) {
+			g.Columns = append(g.Columns, Column{Key: "geo", Type: "point", Filter: &FilterSpec{}, Custom: &CustomOps{Operators: []Op{"within"}}})
+		}, "require Operators and Parse"},
+		{"custom without operators", func(g *Grid) {
+			g.Columns = append(g.Columns, Column{Key: "geo", Type: "point", Filter: &FilterSpec{}, Custom: &CustomOps{Parse: parseRaw}})
+		}, "require Operators and Parse"},
+		{"custom reserved op", func(g *Grid) {
+			g.Columns[1].Custom = &CustomOps{Operators: []Op{OpIsNull}, Parse: parseRaw}
+		}, "reserved"},
+		{"unknown type without custom", func(g *Grid) {
+			g.Columns = append(g.Columns, Column{Key: "geo", Type: "point", Filter: &FilterSpec{}})
+		}, "no operators"},
+		{"custom op listed on another column", func(g *Grid) {
+			g.Columns[1].Filter.Operators = []Op{"within"}
+		}, "not allowed"},
 		{"bad defaultSort", func(g *Grid) { g.DefaultSort.Column = "nope" }, "defaultSort"},
 		{"non-sortable defaultSort", func(g *Grid) { g.Columns[1].Sortable = false }, "defaultSort"},
 		{"bad pageSize", func(g *Grid) { g.PageSize = 0 }, "pageSize"},

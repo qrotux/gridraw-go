@@ -101,6 +101,19 @@ func validateGrid(g *Grid) error {
 				return fmt.Errorf("column %q: step %v must be whole seconds dividing a day", c.Key, c.Step)
 			}
 		}
+		if c.Custom != nil {
+			if c.Filter == nil {
+				return fmt.Errorf("column %q: custom operators on a column without a filter", c.Key)
+			}
+			if len(c.Custom.Operators) == 0 || c.Custom.Parse == nil {
+				return fmt.Errorf("column %q: custom operators require Operators and Parse", c.Key)
+			}
+			for _, op := range c.Custom.Operators {
+				if op == "" || op == OpIsNull || op == OpIsNotNull {
+					return fmt.Errorf("column %q: custom operator %q is reserved", c.Key, op)
+				}
+			}
+		}
 		if c.Filter != nil {
 			if len(c.operators()) == 0 {
 				return fmt.Errorf("column %q: filter with no operators", c.Key)

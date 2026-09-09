@@ -99,6 +99,9 @@ func opAllowed(c Column, op Op) bool {
 	if op == OpIsNull || op == OpIsNotNull {
 		return true
 	}
+	if c.customOp(op) {
+		return true
+	}
 	if c.Array {
 		return hasOp(arrayOps, op)
 	}
@@ -106,7 +109,8 @@ func opAllowed(c Column, op Op) bool {
 }
 
 // operators is the list the column offers: Filter.Operators when set, the
-// full set of the type otherwise, nil when the column is not filterable.
+// full set of the type plus the custom operators otherwise, nil when the
+// column is not filterable.
 func (c Column) operators() []Op {
 	if c.Filter == nil {
 		return nil
@@ -114,10 +118,25 @@ func (c Column) operators() []Op {
 	if len(c.Filter.Operators) > 0 {
 		return c.Filter.Operators
 	}
+	base := opsByType[c.Type]
 	if c.Array {
-		return arrayOps
+		base = arrayOps
 	}
-	return opsByType[c.Type]
+	if c.Custom == nil {
+		return base
+	}
+	ops := append(make([]Op, 0, len(base)+len(c.Custom.Operators)), base...)
+	for _, op := range c.Custom.Operators {
+		if !hasOp(ops, op) {
+			ops = append(ops, op)
+		}
+	}
+	return ops
+}
+
+// customOp reports whether op is handled by the column's CustomOps.
+func (c Column) customOp(op Op) bool {
+	return c.Custom != nil && hasOp(c.Custom.Operators, op)
 }
 
 // valueless reports whether op carries no value.
@@ -142,6 +161,19 @@ type Translator func(locale, key string) string
 type FilterSpec struct {
 	Operators []Op
 	Widget    string
+}
+
+// CustomOps declares operators the core does not know for one column. They
+// join the column's operator set, Parse converts their raw request value and
+// the Compiler renders them (grjet: Binding.Compile). A custom operator that
+// reuses a built-in name takes that operator over on the column, which is how
+// a string column gets an exact, index-friendly eq. A column whose Type is
+// not built in is filterable only through CustomOps.
+type CustomOps struct {
+	Operators []Op
+	// Parse turns the raw JSON value of op into Clause.Value and Clause.Value2;
+	// an error is answered as 400 with its text.
+	Parse func(op Op, raw any) (v, v2 any, err error)
 }
 
 // Filter widget hints. The set is open: a client may honour any value and
@@ -174,12 +206,31 @@ type Column struct {
 	// operators, are never sortable, and are searchable only for string
 	// elements. Step on a time array only validates alignment and informs the
 	// UI; array matching stays exact.
-	Array   bool
+	Array bool
+	// Custom adds operators the core does not know; see CustomOps.
+	Custom  *CustomOps
 	Binding any
 }
 
 // Vis marks the column visible by default.
 func (c Column) Vis() Column { c.DefaultVisible = true; return c }
+
+// WithoutSort disables client sorting on the column.
+func (c Column) WithoutSort() Column { c.Sortable = false; return c }
+
+// WithoutFilter disables filtering and removes custom operators from the column.
+func (c Column) WithoutFilter() Column { c.Filter = nil; c.Custom = nil; return c }
+
+// WithOperators enables filtering with the supplied set; no operators means all available operators.
+func (c Column) WithOperators(ops ...Op) Column {
+	f := FilterSpec{}
+	if c.Filter != nil {
+		f = *c.Filter
+	}
+	f.Operators = append([]Op(nil), ops...)
+	c.Filter = &f
+	return c
+}
 
 // FilterWidget sets the UI hint for the column's filter input; see FilterSpec.
 // A column with no filter is a declaration error, caught by NewRegistry.

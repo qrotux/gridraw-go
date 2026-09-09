@@ -110,6 +110,10 @@ func TestValidateRejects(t *testing.T) {
 			g.Columns[1].Sortable = false
 			g.DefaultSort = gridraw.SortSpec{Column: "id", Dir: "asc"}
 		}, "filter without expression"},
+		{"custom without Compile", func(g *gridraw.Grid) {
+			g.Columns[1].Custom = &gridraw.CustomOps{Operators: []gridraw.Op{"exact"},
+				Parse: func(_ gridraw.Op, raw any) (any, any, error) { return raw, nil, nil }}
+		}, "custom operators without Compile"},
 		{"id not order-by-able", func(g *gridraw.Grid) {
 			g.Columns[0].Binding = Binding{Projection: colEmail.AS("x")}
 			g.Columns[0].Sortable = false
@@ -605,5 +609,124 @@ func TestBind(t *testing.T) {
 	if !strings.Contains(st.RowsSQL, `COALESCE(users.locale, users.email) AS "label"`) ||
 		!strings.Contains(st.RowsSQL, "NOT (COALESCE(users.locale, users.email) ILIKE") {
 		t.Errorf("bound expression not used for projection and filter:\n%s", st.RowsSQL)
+	}
+}
+
+// A Compile hook must not receive reserved null operators nor built-in
+// operators that applyStep rewrote (a stepped eq becomes between): neither
+// went through the column's custom Parse.
+func TestCustomHookOnlyForCustomParsedClauses(t *testing.T) {
+	colCode := postgres.StringColumn("code")
+	colWhen := postgres.TimeColumn("when")
+	g := validTestGrid()
+	g.Binding = Base(func() postgres.ReadableTable {
+		return postgres.NewTable("public", "users", "", colID, colEmail, colCode, colWhen)
+	})
+	parse := func(_ gridraw.Op, raw any) (any, any, error) { return raw, nil, nil }
+	// Panics if reached for anything but a custom-parsed string value.
+	panicHook := func(f postgres.Expression, c gridraw.Clause) (postgres.BoolExpression, bool) {
+		return postgres.BoolExp(postgres.Func("hooked", f, postgres.String(c.Value.(string)))), true
+	}
+	code := Bind(StrCol("code", colEmail), Binding{Projection: colCode, Compile: panicHook})
+	code.Custom = &gridraw.CustomOps{Operators: []gridraw.Op{gridraw.OpEq}, Parse: parse}
+	code = code.Nullable()
+	when := Bind(TimeCol("when", colWhen), Binding{Projection: colWhen, Compile: panicHook})
+	when.Step = 15 * time.Minute
+	when.Custom = &gridraw.CustomOps{Operators: []gridraw.Op{gridraw.OpBetween}, Parse: parse}
+	g.Columns = append(g.Columns, code, when)
+	reg, err := gridraw.NewRegistry(Compiler{}, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gr, _ := reg.Get("t")
+
+	st := compile(t, gr, gridraw.RowsRequest{
+		Columns: []string{"code"},
+		Filters: [][]gridraw.FilterClause{{{Field: "code", Op: gridraw.OpIsNull}}},
+	})
+	if strings.Contains(st.RowsSQL, "hooked") || !strings.Contains(st.RowsSQL, "users.code IS NULL") {
+		t.Errorf("isNull must be built-in, not hooked:\n%s", st.RowsSQL)
+	}
+
+	st = compile(t, gr, gridraw.RowsRequest{
+		Columns: []string{"when"},
+		Filters: [][]gridraw.FilterClause{{{Field: "when", Op: gridraw.OpEq, Value: "09:15:00"}}},
+	})
+	if strings.Contains(st.RowsSQL, "hooked") {
+		t.Errorf("a stepped eq rewritten to between must not reach the hook:\n%s", st.RowsSQL)
+	}
+}
+
+// Binding.Compile renders custom operators and may take a built-in one over;
+// what it declines keeps the built-in rendering.
+func TestCustomOps(t *testing.T) {
+	colGeo := postgres.StringColumn("geo")
+	g := validTestGrid()
+	g.Binding = Base(func() postgres.ReadableTable {
+		return postgres.NewTable("public", "users", "", colID, colEmail, colGeo)
+	})
+	parse := func(_ gridraw.Op, raw any) (any, any, error) { return raw, nil, nil }
+	g.Columns = append(g.Columns,
+		gridraw.Column{
+			Key: "geo", Type: "point", Filter: &gridraw.FilterSpec{},
+			Custom: &gridraw.CustomOps{Operators: []gridraw.Op{"within"}, Parse: parse},
+			Binding: Binding{
+				Projection: postgres.Func("ST_AsText", colGeo).AS("geo"), Filter: colGeo,
+				Compile: func(f postgres.Expression, c gridraw.Clause) (postgres.BoolExpression, bool) {
+					return postgres.BoolExp(postgres.Func("ST_DWithin", f, postgres.Float(c.Value.(float64)))), true
+				},
+			},
+		},
+		Bind(StrCol("code", colEmail), Binding{
+			Projection: colEmail,
+			Compile: func(f postgres.Expression, c gridraw.Clause) (postgres.BoolExpression, bool) {
+				s := postgres.StringExp(f)
+				switch c.Op {
+				case gridraw.OpEq:
+					return s.EQ(postgres.String(c.Value.(string))), true
+				case gridraw.OpNeq:
+					return OrNull(f, s.NOT_EQ(postgres.String(c.Value.(string)))), true
+				}
+				return nil, false
+			},
+		}),
+	)
+	g.Columns[len(g.Columns)-1].Custom = &gridraw.CustomOps{Operators: []gridraw.Op{gridraw.OpEq, gridraw.OpNeq}, Parse: parse}
+	reg, err := gridraw.NewRegistry(Compiler{}, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gr, _ := reg.Get("t")
+
+	st := compile(t, gr, gridraw.RowsRequest{
+		Columns: []string{"geo"},
+		Filters: [][]gridraw.FilterClause{{{Field: "geo", Op: "within", Value: 5.0}}},
+	})
+	if !strings.Contains(st.RowsSQL, `ST_AsText(users.geo) AS "geo"`) || !strings.Contains(st.RowsSQL, "ST_DWithin(users.geo, $1)") || st.RowsArgs[0] != 5.0 {
+		t.Errorf("custom op not rendered by Compile:\n%s %v", st.RowsSQL, st.RowsArgs)
+	}
+
+	for _, tc := range []struct {
+		op   gridraw.Op
+		want string
+		null bool
+	}{
+		{gridraw.OpEq, "users.email = $1", false},
+		{gridraw.OpNeq, "users.email != $1", true},
+		{gridraw.OpContains, "users.email ILIKE $1", false},
+	} {
+		st := compile(t, gr, gridraw.RowsRequest{
+			Columns: []string{"code"},
+			Filters: [][]gridraw.FilterClause{{{Field: "code", Op: tc.op, Value: "a_b"}}},
+		})
+		if !strings.Contains(st.RowsSQL, tc.want) {
+			t.Errorf("%s: want %q in\n%s", tc.op, tc.want, st.RowsSQL)
+		}
+		if got := strings.Contains(st.RowsSQL, "IS NULL"); got != tc.null {
+			t.Errorf("%s: IS NULL present = %v, want %v", tc.op, got, tc.null)
+		}
+		if tc.op == gridraw.OpEq && st.RowsArgs[0] != "a_b" {
+			t.Errorf("exact eq must bind the raw value, got %v", st.RowsArgs[0])
+		}
 	}
 }
